@@ -1,0 +1,3190 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Draußen-Zeit Tracker</title>
+<style>
+:root {
+    --bg:#f2f5f0; --card:#f8faf6; --text:#1a2218; --primary:#4a8c35;
+}
+body.dark { --bg:#111612; --card:#1a2019; --text:#e8f0e4; --primary:#72b85a; }
+
+/* === NEON MODE === */
+body.neon {
+    --bg:#000000; --card:#0a0a0a; --text:#ffffff; --primary:#ff00ff;
+}
+body.neon::before {
+    content:'';
+    position:fixed;
+    inset:0;
+    z-index:-1;
+    background: #000;
+    overflow: hidden;
+}
+#neon-canvas {
+    display:none;
+    position:fixed;
+    inset:0;
+    z-index:-1;
+    pointer-events:none;
+}
+body.neon #neon-canvas { display:block; }
+
+body.neon .day {
+    background: rgba(10,10,30,0.85);
+    border: 1px solid rgba(0,255,255,0.2);
+    color:#fff;
+    text-shadow: 0 0 6px #0ff;
+    transition: all 0.2s;
+}
+body.neon .day:hover {
+    transform:scale(1.08);
+    border-color: #ff00ff;
+    box-shadow: 0 0 12px #ff00ff, 0 0 24px rgba(255,0,255,0.4);
+}
+body.neon .red    { background: rgba(180,0,50,0.5)!important; border-color:#ff0055!important; box-shadow:0 0 8px #ff0055; }
+body.neon .yellow { background: rgba(180,150,0,0.5)!important; border-color:#ffee00!important; box-shadow:0 0 8px #ffee00; }
+body.neon .lightgreen { background: rgba(0,180,80,0.5)!important; border-color:#00ff88!important; box-shadow:0 0 8px #00ff88; }
+body.neon .darkgreen  { background: rgba(0,120,50,0.5)!important; border-color:#00ffaa!important; box-shadow:0 0 12px #00ffaa; }
+body.neon .day.today { outline-color:#ff00ff; box-shadow:0 0 16px #ff00ff; }
+
+body.neon #stats, body.neon #chartBox, body.neon #yearView {
+    background: rgba(10,0,30,0.8);
+    border: 1px solid rgba(0,255,255,0.25);
+    box-shadow: 0 0 20px rgba(0,255,255,0.1);
+}
+body.neon #entryBox {
+    background: rgba(5,0,20,0.95);
+    border: 1px solid #ff00ff;
+    box-shadow: 0 0 30px rgba(255,0,255,0.4);
+}
+body.neon button {
+    background: linear-gradient(135deg, #ff00ff, #00ffff);
+    color: #000;
+    font-weight: bold;
+    box-shadow: 0 0 10px rgba(255,0,255,0.5);
+    transition: box-shadow 0.2s, transform 0.1s;
+}
+@media (hover: hover) {
+    body.neon button:hover {
+        box-shadow: 0 0 20px rgba(255,0,255,0.8), 0 0 40px rgba(0,255,255,0.4);
+    }
+}
+body.neon button.danger {
+    background: linear-gradient(135deg, #ff0055, #ff6600);
+    color:#fff;
+}
+body.neon h1 {
+    background: linear-gradient(90deg, #ff00ff, #00ffff, #ff00ff);
+    background-size: 200%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: neonTitle 3s linear infinite;
+    text-shadow: none;
+}
+@keyframes neonTitle {
+    0%{background-position:0%} 100%{background-position:200%}
+}
+body.neon #monthLabel {
+    color:#0ff;
+    text-shadow: 0 0 10px #0ff;
+}
+
+
+/* === END NEON === */
+
+body {
+    font-family:system-ui,sans-serif; background:var(--bg); color:var(--text);
+    margin:0; padding:1rem; transition: background 0.3s,color 0.3s; position:relative;
+}
+h1{text-align:center;margin-top:0;}
+#topBar{display:flex;justify-content:space-between;align-items:center;}
+#menuBtn {
+    font-size: 22px;
+    cursor: pointer;
+    user-select: none;
+    transition: transform .2s ease, opacity .15s;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    background: rgba(100,160,60,0.12);
+    border: 1px solid rgba(100,160,60,0.2);
+    color: #4a7c3f;
+}
+#menuBtn:hover {
+    transform: scale(1.08);
+    background: rgba(100,160,60,0.2);
+}
+body.dark #menuBtn {
+    background: rgba(100,180,60,0.1);
+    border-color: rgba(120,200,70,0.2);
+    color: #90c878;
+}
+body.neon #menuBtn {
+    background: rgba(0,255,255,0.07);
+    border-color: rgba(0,255,255,0.25);
+    color: #0ff;
+    text-shadow: 0 0 10px #0ff;
+}
+#monthLabel{text-align:center;font-weight:bold;}
+#weekdays{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;margin-bottom:6px;font-weight:bold;}
+#calendar-container{min-height:350px;margin-bottom:15px;position:relative;overflow:hidden;}
+#calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;transition:all .3s ease;}
+
+/* Slide-Animation beim Monatswechsel */
+@keyframes slideInFromRight {
+    from { transform: translateX(100%); opacity: 0.4; }
+    to   { transform: translateX(0);    opacity: 1; }
+}
+@keyframes slideInFromLeft {
+    from { transform: translateX(-100%); opacity: 0.4; }
+    to   { transform: translateX(0);     opacity: 1; }
+}
+@keyframes slideOutToLeft {
+    from { transform: translateX(0);     opacity: 1; }
+    to   { transform: translateX(-100%); opacity: 0.4; }
+}
+@keyframes slideOutToRight {
+    from { transform: translateX(0);    opacity: 1; }
+    to   { transform: translateX(100%); opacity: 0.4; }
+}
+#calendar.slide-in-right  { animation: slideInFromRight 0.32s cubic-bezier(0.4,0,0.2,1) forwards; }
+#calendar.slide-in-left   { animation: slideInFromLeft  0.32s cubic-bezier(0.4,0,0.2,1) forwards; }
+.calendar-ghost { position:absolute; top:0; left:0; width:100%; display:grid; grid-template-columns:repeat(7,1fr); gap:8px; pointer-events:none; }
+.calendar-ghost.slide-out-left  { animation: slideOutToLeft  0.32s cubic-bezier(0.4,0,0.2,1) forwards; }
+.calendar-ghost.slide-out-right { animation: slideOutToRight 0.32s cubic-bezier(0.4,0,0.2,1) forwards; }
+.day{background:var(--card);padding:12px 0;text-align:center;border-radius:8px;cursor:pointer;min-height:50px;transition:transform .1s;}
+.day:hover{transform:scale(1.05);}
+/* === TAP-HIGHLIGHT: kein blaues Aufleuchten auf Touch-Geräten === */
+*,
+*::before,
+*::after {
+    -webkit-tap-highlight-color: transparent;
+}
+/* Eingabefelder behalten natives Highlight */
+input, textarea, select, [contenteditable] {
+    -webkit-tap-highlight-color: revert;
+}
+/* === END TAP-HIGHLIGHT === */
+
+/* === NO-SELECT: verhindert unerwünschte Textmarkierungen === */
+.no-select,
+h1, h2, h3,
+#menuBtn,
+#topBar h1,
+#topBar h1 *,
+#monthLabel,
+#weekdays,
+#weekdays > div,
+.navButtons,
+.navButtons button,
+button,
+.sidebar-btn,
+.sidebar-btn *,
+#sidebar-header,
+#sidebar-header *,
+.sidebar-section-label,
+.sidebar-divider,
+.sidebar-leaf,
+.day,
+label,
+#stats,
+.stat-card,
+.stat-card h3,
+.stat-sub,
+.mr-card,
+.mr-card-label,
+.mr-month-title,
+.mr-month-subtitle,
+.mr-total-label,
+.mr-nav,
+.mr-nav-btn,
+.mr-nav-month,
+.mr-streak-label,
+.mr-summary-title,
+.mr-compare,
+.cdd-title,
+.cdd-sub,
+.cdd-icon,
+#chartToast,
+.entry-buttons,
+.entry-buttons button,
+#entryActions,
+#entryActions button,
+.mp-year-btn,
+.mp-year-label,
+.mp-month-btn,
+.theme-btn,
+.toggle-btn,
+[role="button"] {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+/* Eingabefelder bleiben voll funktionsfähig */
+input, textarea, [contenteditable] {
+    -webkit-user-select: text !important;
+    -moz-user-select: text !important;
+    user-select: text !important;
+    -webkit-touch-callout: default !important;
+}
+/* === END NO-SELECT === */
+
+/* === STATUS FARBEN === */
+:root {
+    --color-red:        #f5a8ae;
+    --color-yellow:     #f5e580;
+    --color-lightgreen: #93d49b;
+    --color-darkgreen:  #4caf62;
+}
+body.dark {
+    --color-red:        #c0424e;
+    --color-yellow:     #b8960a;
+    --color-lightgreen: #2e8c44;
+    --color-darkgreen:  #1c6b30;
+}
+.red        { background: var(--color-red); }
+.yellow     { background: var(--color-yellow); }
+.lightgreen { background: var(--color-lightgreen); }
+.darkgreen  { background: var(--color-darkgreen); font-weight: normal; }
+
+/* Light mode: all status days get dark text for contrast */
+.red, .yellow, .lightgreen, .darkgreen { color: #1a2218; }
+/* Dark mode text overrides */
+.dark .red        { color: #ffe8ea; }
+.dark .yellow     { color: #fff8d0; }
+.dark .lightgreen { color: #d4f5dc; }
+.dark .darkgreen  { color: #d4f5dc; }
+.dark .day:not(.red):not(.yellow):not(.lightgreen):not(.darkgreen) { color: #fff; }
+#calendar.blurred{filter:blur(3px);pointer-events:none;}
+#weekdays.blurred {
+    filter: blur(3px);
+    pointer-events: none;
+}
+.navButtons {
+    display: flex;
+    gap: 10px;
+    margin-top: 15px;
+}
+.navButtons button {
+    flex: 1;
+    padding: 11px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    border: 1px solid rgba(80,140,50,0.35);
+    border-radius: 10px;
+    background: linear-gradient(135deg, rgba(80,140,50,0.15) 0%, rgba(60,110,35,0.1) 100%);
+    color: #3a6b28;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+    overflow: hidden;
+}
+.navButtons button::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(100,170,60,0.2), transparent);
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+@media (hover: hover) {
+    .navButtons button:hover {
+        background: linear-gradient(135deg, rgba(80,150,50,0.28) 0%, rgba(60,120,35,0.2) 100%);
+        border-color: rgba(90,160,55,0.6);
+        color: #2d5520;
+        box-shadow: 0 4px 14px rgba(70,130,40,0.2);
+    }
+}
+@media (hover: hover) {
+    .navButtons button:hover::before { opacity: 1; }
+}
+.navButtons button:active {
+    transform: translateY(0) !important;
+    box-shadow: none !important;
+    animation: btnClick 0.28s ease forwards;
+}
+@keyframes btnClick {
+    0%   { transform: scale(0.93); filter: brightness(0.82); }
+    60%  { transform: scale(1.02); filter: brightness(1); }
+    100% { transform: scale(1);    filter: brightness(1); }
+}
+@media (hover: none) {
+    @media (hover: hover) {
+        .navButtons button:hover {
+            transform: none;
+            box-shadow: none;
+        }
+    }
+}
+
+body.dark .navButtons button {
+    background: linear-gradient(135deg, rgba(80,150,50,0.2) 0%, rgba(50,100,30,0.15) 100%);
+    border-color: rgba(100,180,60,0.25);
+    color: #90c870;
+}
+@media (hover: hover) {
+    body.dark .navButtons button:hover {
+        background: linear-gradient(135deg, rgba(90,160,55,0.3) 0%, rgba(60,120,35,0.25) 100%);
+        border-color: rgba(120,200,70,0.45);
+        color: #aada88;
+        box-shadow: 0 4px 14px rgba(80,160,40,0.2);
+    }
+}
+body.neon .navButtons button {
+    background: rgba(0,255,100,0.06);
+    border-color: rgba(0,255,150,0.25);
+    color: #0fc;
+    text-shadow: 0 0 8px rgba(0,255,150,0.5);
+}
+@media (hover: hover) {
+    body.neon .navButtons button:hover {
+        background: rgba(0,255,120,0.14);
+        border-color: rgba(0,255,180,0.5);
+        color: #fff;
+        box-shadow: 0 0 16px rgba(0,255,120,0.25);
+    }
+}
+button {
+    flex: 1;
+    padding: 12px;
+    font-size: 16px;
+    border-radius: 8px;
+    border: 1px solid rgba(80,140,50,0.3);
+    background: linear-gradient(135deg, rgba(74,140,53,0.18) 0%, rgba(55,110,35,0.12) 100%);
+    color: #2d5e1e;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-weight: 500;
+}
+button:focus, button:focus-visible { outline: none; }
+.sidebar-btn:focus, .sidebar-btn:focus-visible { outline: none; }
+@media (hover: hover) {
+    button:hover {
+        background: linear-gradient(135deg, rgba(74,140,53,0.28) 0%, rgba(55,110,35,0.22) 100%);
+        border-color: rgba(90,160,55,0.55);
+        color: #1e4414;
+        box-shadow: 0 3px 12px rgba(60,120,35,0.18);
+    }
+}
+button:active {
+    transform: translateY(0) !important;
+    box-shadow: none !important;
+    animation: btnClick 0.28s ease forwards;
+}
+@media (hover: none) {
+    @media (hover: hover) {
+        button:hover {
+            transform: none;
+            box-shadow: none;
+        }
+    }
+}
+button.danger {
+    background: linear-gradient(135deg, rgba(180,40,40,0.15) 0%, rgba(140,25,25,0.1) 100%);
+    border-color: rgba(200,60,60,0.3);
+    color: #9b2222;
+}
+@media (hover: hover) {
+    button.danger:hover {
+        background: linear-gradient(135deg, rgba(200,40,40,0.25) 0%, rgba(160,25,25,0.18) 100%);
+        border-color: rgba(220,70,70,0.5);
+        color: #7a1515;
+        box-shadow: 0 3px 12px rgba(180,40,40,0.2);
+    }
+}
+body.dark button {
+    background: linear-gradient(135deg, rgba(80,150,55,0.18) 0%, rgba(55,110,35,0.12) 100%);
+    border-color: rgba(100,180,60,0.22);
+    color: #8ec870;
+}
+@media (hover: hover) {
+    body.dark button:hover {
+        background: linear-gradient(135deg, rgba(90,160,60,0.28) 0%, rgba(60,120,38,0.22) 100%);
+        border-color: rgba(120,200,70,0.42);
+        color: #aada88;
+        box-shadow: 0 3px 12px rgba(80,160,40,0.18);
+    }
+}
+body.dark button.danger {
+    background: linear-gradient(135deg, rgba(180,40,40,0.18) 0%, rgba(140,25,25,0.12) 100%);
+    border-color: rgba(200,60,60,0.25);
+    color: #e07070;
+}
+@media (hover: hover) {
+    body.dark button.danger:hover {
+        background: linear-gradient(135deg, rgba(200,45,45,0.28) 0%, rgba(160,28,28,0.2) 100%);
+        border-color: rgba(220,80,80,0.45);
+        color: #f09090;
+    }
+}
+#stats{margin-top:15px;background:var(--card);padding:1rem;border-radius:10px;user-select:none;-webkit-user-select:none;}
+#chartBox,#yearChartBox{margin-top:20px;background:var(--card);padding:1rem;border-radius:10px;position:relative;}
+#chartBox {
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+}
+#chartBox::after {
+    content: '⬇ Gedrückt halten zum Speichern';
+    position: absolute;
+    bottom: 8px;
+    right: 10px;
+    font-size: 0.68rem;
+    opacity: 0.35;
+    pointer-events: none;
+    letter-spacing: 0.02em;
+    color: var(--text);
+}
+#chartBox.pressing::after {
+    content: '…wird gespeichert';
+    opacity: 0.7;
+}
+#chartBox.pressing {
+    box-shadow: 0 0 0 2px var(--primary);
+    transition: box-shadow 0.2s;
+}
+/* Toast notification */
+#chartToast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: rgba(30,60,20,0.92);
+    color: #c8f0a0;
+    padding: 10px 20px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 999;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    white-space: nowrap;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+}
+#chartToast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+body.neon #chartToast {
+    background: rgba(0,10,30,0.95);
+    color: #0ff;
+    box-shadow: 0 0 16px rgba(0,255,255,0.3);
+}
+body.dark #chartToast {
+    background: rgba(20,40,15,0.95);
+}
+#entryBox{display:none;position:absolute;top:25%;left:50%;transform:translate(-50%,-50%) translateY(10px);background:var(--card);padding:2rem 1.5rem 1.5rem 1.5rem;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);z-index:200;opacity:0;transition:opacity .25s ease,transform .25s ease;width:340px;}
+#entryBox input[type="number"]{
+    display:block;
+    margin:0 auto;
+    text-align:center;
+}
+#entryBox textarea{
+    width:100%;
+    padding:10px;
+    font-size:16px;
+    border-radius:8px;
+    border:1px solid #ccc;
+}
+
+
+#entryBox.show{display:block;opacity:1;transform:translate(-50%,-50%) translateY(0);}
+#entryBox input[type="number"]{width:100%;padding:10px;font-size:16px;border-radius:8px;border:1px solid #ccc;appearance:textfield;-webkit-appearance:textfield;}
+#entryBox input::-webkit-outer-spin-button,#entryBox input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+#entryBox .entry-buttons{margin-top:15px;display:flex;justify-content:center;gap:10px;}
+#entryBox .entry-buttons button{flex:1;}
+#entryBox .entry-buttons button:first-child {
+    background: linear-gradient(135deg, rgba(60,130,40,0.85) 0%, rgba(45,105,28,0.9) 100%);
+    border-color: rgba(70,150,45,0.6);
+    color: #f0fae8;
+    font-weight: 600;
+}
+@media (hover: hover) {
+    #entryBox .entry-buttons button:first-child:hover {
+        background: linear-gradient(135deg, rgba(65,145,42,0.95) 0%, rgba(50,115,30,1) 100%);
+        border-color: rgba(90,170,55,0.8);
+        color: #fff;
+        box-shadow: 0 3px 14px rgba(50,120,30,0.35);
+    }
+}
+body.dark #entryBox .entry-buttons button:first-child {
+    background: linear-gradient(135deg, rgba(70,145,48,0.7) 0%, rgba(50,115,30,0.75) 100%);
+    border-color: rgba(90,170,55,0.45);
+    color: #c8f0a8;
+}
+#overlay{position:fixed;inset:0;background:rgba(0,0,0,0.4);display:none;z-index:150;}
+/* === SIDEBAR REDESIGN === */
+#sidebar {
+    position: fixed;
+    top: 0;
+    right: -320px;
+    width: 280px;
+    height: 100%;
+    background: linear-gradient(160deg, #1b2e1a 0%, #243320 40%, #1a2918 100%);
+    padding: 0;
+    transition: right 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 300;
+    overflow-y: auto;
+    box-shadow: -8px 0 40px rgba(0,0,0,0.4);
+    border-left: 1px solid rgba(100,160,80,0.2);
+}
+#sidebar::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(ellipse at 20% 10%, rgba(80,160,60,0.12) 0%, transparent 55%),
+        radial-gradient(ellipse at 80% 80%, rgba(40,100,30,0.15) 0%, transparent 50%);
+    pointer-events: none;
+    z-index: 0;
+}
+#sidebar-inner {
+    position: relative;
+    z-index: 1;
+    padding: 0 1rem 2rem 1rem;
+}
+#sidebar-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 1.4rem 1rem 1rem 1rem;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid rgba(100,180,70,0.2);
+}
+#sidebar-header .sidebar-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #a8d878;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-size: 0.85rem;
+}
+#sidebar-header .sidebar-leaf {
+    font-size: 1.4rem;
+    filter: drop-shadow(0 0 6px rgba(120,200,80,0.5));
+}
+.sidebar-section-label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: rgba(150,200,100,0.5);
+    padding: 1rem 0 0.3rem 0;
+    font-weight: 600;
+}
+#sidebar.open { right: 0; }
+#overlay.show { display: block; }
+
+.sidebar-btn {
+    width: 100%;
+    margin-bottom: 6px;
+    transition: all 0.18s ease;
+    background: rgba(255,255,255,0.05);
+    color: #d4edc4;
+    border: 1px solid rgba(120,180,80,0.2);
+    border-radius: 10px;
+    padding: 11px 14px;
+    font-size: 14px;
+    text-align: left;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    letter-spacing: 0.01em;
+    font-weight: 500;
+}
+@media (hover: hover) {
+    .sidebar-btn:hover {
+        background: rgba(100,180,60,0.18);
+        border-color: rgba(130,200,80,0.45);
+        color: #c8f0a0;
+        box-shadow: 0 2px 12px rgba(80,160,40,0.2);
+    }
+}
+.sidebar-btn:active {
+    transform: translateX(0) !important;
+    box-shadow: none !important;
+    animation: sidebarBtnClick 0.25s ease forwards;
+}
+@keyframes sidebarBtnClick {
+    0%   { transform: scale(0.95); filter: brightness(0.82); }
+    60%  { transform: scale(1.01); filter: brightness(1); }
+    100% { transform: scale(1);    filter: brightness(1); }
+}
+@media (hover: none) {
+    @media (hover: hover) {
+        .sidebar-btn:hover {
+            transform: none;
+            box-shadow: none;
+        }
+    }
+}
+.sidebar-btn.danger {
+    background: rgba(180,40,40,0.12);
+    border-color: rgba(200,60,60,0.25);
+    color: #f4a0a0;
+}
+@media (hover: hover) {
+    .sidebar-btn.danger:hover {
+        background: rgba(200,40,40,0.25);
+        border-color: rgba(220,80,80,0.5);
+        color: #ffbbbb;
+        box-shadow: 0 2px 12px rgba(180,40,40,0.25);
+    }
+}
+.sidebar-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(100,180,70,0.25), transparent);
+    margin: 10px 0;
+    border: none;
+}
+
+/* Neon mode sidebar overrides */
+body.neon #sidebar {
+    background: rgba(5,0,20,0.97);
+    border-left: 1px solid #ff00ff;
+    box-shadow: -5px 0 30px rgba(255,0,255,0.3);
+}
+body.neon #sidebar::before { display: none; }
+body.neon #sidebar-header { border-bottom-color: rgba(255,0,255,0.3); }
+body.neon #sidebar-header .sidebar-title { color: #0ff; }
+body.neon .sidebar-btn {
+    background: rgba(255,255,255,0.04);
+    border-color: rgba(0,255,255,0.2);
+    color: #cff;
+}
+@media (hover: hover) {
+    body.neon .sidebar-btn:hover {
+        background: rgba(0,255,255,0.1);
+        border-color: #0ff;
+        color: #fff;
+        box-shadow: 0 0 12px rgba(0,255,255,0.3);
+    }
+}
+body.neon .sidebar-btn.danger {
+    border-color: rgba(255,0,100,0.3);
+    color: #ff88aa;
+}
+@media (hover: hover) {
+    body.neon .sidebar-btn.danger:hover {
+        background: rgba(255,0,80,0.15);
+        border-color: #ff0055;
+        box-shadow: 0 0 12px rgba(255,0,80,0.3);
+    }
+}
+body.neon .sidebar-section-label { color: rgba(0,255,255,0.4); }
+body.neon .sidebar-divider { background: linear-gradient(90deg, transparent, rgba(255,0,255,0.3), transparent); }
+
+/* Dark mode sidebar */
+body.dark #sidebar {
+    background: linear-gradient(160deg, #111a10 0%, #182015 40%, #111810 100%);
+}
+/* === END SIDEBAR REDESIGN === */
+.day.today {
+    outline: 2px solid var(--primary);
+    outline-offset: -2px;
+}
+.hidden {
+    display: none !important;
+}
+#yearView {
+    height: calc(100vh - 80px);
+}
+#yearView canvas {
+    height: 100% !important;
+}
+
+/* === STATS PAGE === */
+#statsPage {
+    display:none;
+}
+#statsPage .stat-card {
+    background: var(--card);
+    border-radius:10px;
+    padding:1rem;
+    margin-bottom:12px;
+}
+#statsPage .stat-card h3 {
+    margin:0 0 6px 0;
+    font-size:1rem;
+    color: var(--primary);
+}
+#statsPage .stat-value {
+    font-size:1.4rem;
+    font-weight:bold;
+}
+#statsPage .stat-sub {
+    font-size:0.92rem;
+    color: var(--text);
+    opacity: 0.65;
+    margin-top:3px;
+    line-height:1.5;
+}
+body.neon #statsPage .stat-sub {
+    color:#0ff;
+    opacity:0.7;
+}
+body.neon #statsPage .stat-card {
+    background: rgba(10,0,30,0.8);
+    border:1px solid rgba(0,255,255,0.25);
+    box-shadow: 0 0 15px rgba(0,255,255,0.1);
+}
+body.neon #statsPage .stat-card h3 {
+    color:#0ff;
+    text-shadow:0 0 8px #0ff;
+}
+body.neon #statsPage .stat-value {
+    color:#ff00ff;
+    text-shadow:0 0 10px #ff00ff;
+}
+
+/* === MONATSRÜCKBLICK === */
+#monthlyReviewPage {
+    display: none;
+}
+#monthlyReviewPage h2 {
+    margin: 0 0 16px 0;
+    font-size: 1.2rem;
+    color: var(--primary);
+}
+.mr-header {
+    background: linear-gradient(135deg, rgba(74,140,53,0.15) 0%, rgba(40,100,28,0.08) 100%);
+    border: 1px solid rgba(80,140,50,0.25);
+    border-radius: 14px;
+    padding: 1.4rem 1.2rem;
+    margin-bottom: 18px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+}
+.mr-header::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 70% 20%, rgba(100,180,60,0.12) 0%, transparent 60%);
+    pointer-events: none;
+}
+.mr-month-title {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 4px;
+}
+.mr-month-subtitle {
+    font-size: 0.8rem;
+    opacity: 0.6;
+    margin-bottom: 14px;
+}
+.mr-total-hero {
+    font-size: 2.2rem;
+    font-weight: 800;
+    color: var(--text);
+    line-height: 1;
+    margin-bottom: 2px;
+}
+.mr-total-label {
+    font-size: 0.78rem;
+    opacity: 0.55;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+.mr-compare {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 12px;
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 0.88rem;
+    font-weight: 700;
+}
+.mr-compare.positive {
+    background: rgba(76,175,98,0.2);
+    color: #2d8040;
+    border: 1px solid rgba(76,175,98,0.35);
+}
+.mr-compare.negative {
+    background: rgba(220,60,60,0.15);
+    color: #c02828;
+    border: 1px solid rgba(220,60,60,0.3);
+}
+.mr-compare.neutral {
+    background: rgba(120,140,100,0.15);
+    color: #5a6a50;
+    border: 1px solid rgba(120,140,100,0.25);
+}
+body.dark .mr-compare.positive { background: rgba(76,175,98,0.15); color: #6dd890; border-color: rgba(76,175,98,0.3); }
+body.dark .mr-compare.negative { background: rgba(220,60,60,0.12); color: #f07070; border-color: rgba(220,60,60,0.25); }
+body.dark .mr-compare.neutral  { background: rgba(120,140,100,0.12); color: #a0b890; border-color: rgba(120,140,100,0.2); }
+
+.mr-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+@media (max-width: 380px) {
+    .mr-grid { grid-template-columns: 1fr; }
+}
+.mr-card {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 1rem 1rem 0.9rem 1rem;
+    border: 1px solid rgba(80,140,50,0.15);
+    box-shadow: 0 2px 8px rgba(40,100,20,0.06);
+    position: relative;
+    overflow: hidden;
+}
+.mr-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--primary), transparent);
+    opacity: 0.4;
+}
+.mr-card-icon {
+    font-size: 1.3rem;
+    margin-bottom: 4px;
+    display: block;
+}
+.mr-card-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    opacity: 0.55;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+.mr-card-value {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.2;
+}
+.mr-card-sub {
+    font-size: 0.75rem;
+    opacity: 0.5;
+    margin-top: 2px;
+}
+.mr-card.highlight {
+    border-color: rgba(74,140,53,0.35);
+    background: linear-gradient(135deg, rgba(74,140,53,0.1) 0%, var(--card) 70%);
+}
+
+.mr-streak-bar {
+    margin-bottom: 14px;
+    background: var(--card);
+    border-radius: 12px;
+    padding: 1rem;
+    border: 1px solid rgba(80,140,50,0.15);
+}
+.mr-streak-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    opacity: 0.55;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+.mr-streak-dots {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+}
+.mr-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 2px;
+    background: rgba(120,150,100,0.15);
+    border: 1px solid rgba(100,130,80,0.12);
+    flex-shrink: 0;
+}
+.mr-dot.active { background: var(--color-darkgreen); border-color: transparent; }
+.mr-dot.partial { background: var(--color-lightgreen); border-color: transparent; }
+.mr-dot.low { background: var(--color-yellow); border-color: transparent; }
+.mr-dot.bad { background: var(--color-red); border-color: transparent; }
+
+.mr-summary {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 1rem 1.1rem;
+    border: 1px solid rgba(80,140,50,0.15);
+    margin-bottom: 14px;
+    font-size: 0.9rem;
+    line-height: 1.55;
+    opacity: 0.85;
+}
+.mr-summary-title {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    opacity: 0.5;
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+/* Month nav row */
+.mr-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 18px;
+}
+.mr-nav-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 1px solid rgba(80,140,50,0.3);
+    background: rgba(80,140,50,0.1);
+    color: var(--primary);
+    font-size: 1.1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, transform 0.1s;
+    flex: none;
+    padding: 0;
+    font-weight: bold;
+}
+.mr-nav-btn:hover {
+    background: rgba(80,140,50,0.22);
+    transform: scale(1.1);
+}
+.mr-nav-month {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text);
+    min-width: 160px;
+    text-align: center;
+    letter-spacing: 0.02em;
+}
+
+/* Neon overrides */
+body.neon .mr-header { background: rgba(0,40,20,0.5); border-color: rgba(0,255,150,0.25); }
+body.neon .mr-month-title { color: #0ff; text-shadow: 0 0 10px #0ff; }
+body.neon .mr-total-hero { color: #fff; text-shadow: 0 0 15px #0ff; }
+body.neon .mr-card { background: rgba(10,0,30,0.8); border-color: rgba(0,255,255,0.2); }
+body.neon .mr-card::before { background: linear-gradient(90deg, #ff00ff, transparent); opacity: 0.6; }
+body.neon .mr-card.highlight { border-color: rgba(0,255,255,0.4); }
+body.neon .mr-streak-bar, body.neon .mr-summary { background: rgba(10,0,30,0.8); border-color: rgba(0,255,255,0.2); }
+body.neon .mr-nav-btn { border-color: rgba(0,255,255,0.3); background: rgba(0,255,255,0.06); color: #0ff; }
+body.neon .mr-compare.positive { background: rgba(0,255,100,0.1); color: #0f8; border-color: rgba(0,255,100,0.3); }
+body.neon .mr-compare.negative { background: rgba(255,0,80,0.1); color: #f88; border-color: rgba(255,0,80,0.3); }
+
+/* === END MONATSRÜCKBLICK === */
+
+/* Chart download dialog */
+#chartDownloadDialog {
+    background: var(--card);
+    border-radius: 16px;
+    padding: 1.8rem 1.6rem 1.4rem;
+    max-width: 300px;
+    width: 88%;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+    border: 1px solid rgba(80,140,50,0.2);
+    animation: cddPop 0.18s ease;
+}
+@keyframes cddPop {
+    from { transform: scale(0.88); opacity: 0; }
+    to   { transform: scale(1);    opacity: 1; }
+}
+.cdd-icon  { font-size: 2rem; margin-bottom: 0.5rem; }
+.cdd-title { font-size: 1.05rem; font-weight: 700; color: var(--text); margin-bottom: 0.3rem; }
+.cdd-sub   { font-size: 0.82rem; opacity: 0.55; margin-bottom: 1.2rem; }
+.cdd-buttons { display: flex; gap: 10px; }
+.cdd-btn {
+    flex: 1;
+    padding: 0.6rem 0.4rem;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: opacity 0.15s, transform 0.1s;
+}
+.cdd-btn:active { transform: scale(0.96); }
+.cdd-cancel  { background: rgba(120,140,100,0.15); color: var(--text); border: 1px solid rgba(100,130,80,0.2); }
+.cdd-confirm { background: var(--primary); color: #fff; }
+body.neon #chartDownloadDialog { background: rgba(5,0,20,0.97); border-color: rgba(0,255,255,0.3); box-shadow: 0 0 30px rgba(0,255,255,0.2); }
+body.neon .cdd-confirm { background: #0ff; color: #000; }
+body.neon .cdd-cancel  { border-color: rgba(0,255,255,0.2); color: #0ff; }
+
+/* === TRACKING START DATE === */
+.day.pre-start {
+    opacity: 0.32;
+    cursor: default;
+    background: repeating-linear-gradient(
+        135deg,
+        rgba(120,140,110,0.08) 0px,
+        rgba(120,140,110,0.08) 4px,
+        transparent 4px,
+        transparent 10px
+    ) !important;
+    border: 1px dashed rgba(120,150,100,0.25);
+    color: rgba(100,120,90,0.5) !important;
+    font-style: italic;
+    pointer-events: none;
+}
+body.dark .day.pre-start {
+    background: repeating-linear-gradient(
+        135deg,
+        rgba(60,80,50,0.15) 0px,
+        rgba(60,80,50,0.15) 4px,
+        transparent 4px,
+        transparent 10px
+    ) !important;
+    border-color: rgba(80,110,60,0.2);
+    color: rgba(140,170,120,0.3) !important;
+}
+body.neon .day.pre-start {
+    background: repeating-linear-gradient(
+        135deg,
+        rgba(0,40,40,0.3) 0px,
+        rgba(0,40,40,0.3) 4px,
+        transparent 4px,
+        transparent 10px
+    ) !important;
+    border-color: rgba(0,100,100,0.2);
+    color: rgba(0,200,200,0.2) !important;
+}
+
+/* Start-date dialog */
+#startDateBox {
+    display: none;
+    position: absolute;
+    top: 25%;
+    left: 50%;
+    transform: translate(-50%, -50%) translateY(10px);
+    background: var(--card);
+    padding: 2rem 1.5rem 1.5rem 1.5rem;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.2);
+    z-index: 200;
+    opacity: 0;
+    transition: opacity .25s ease, transform .25s ease;
+    width: 320px;
+}
+#startDateBox.show {
+    display: block;
+    opacity: 1;
+    transform: translate(-50%, -50%) translateY(0);
+}
+#startDateBox h3 {
+    margin: 0 0 6px 0;
+    font-size: 1rem;
+}
+#startDateBox p {
+    font-size: 0.82rem;
+    opacity: 0.65;
+    margin: 0 0 14px 0;
+    line-height: 1.4;
+}
+#startDateBox input[type="date"] {
+    width: 100%;
+    padding: 10px;
+    font-size: 15px;
+    border-radius: 8px;
+    border: 1px solid rgba(80,140,50,0.35);
+    background: var(--bg);
+    color: var(--text);
+    box-sizing: border-box;
+}
+#startDateBox .start-date-current {
+    margin-top: 10px;
+    font-size: 0.8rem;
+    opacity: 0.55;
+    text-align: center;
+}
+#startDateBox .entry-buttons {
+    margin-top: 15px;
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+}
+#startDateBox .entry-buttons button { flex: 1; }
+#startDateBox .entry-buttons button:first-child {
+    background: linear-gradient(135deg, rgba(60,130,40,0.85) 0%, rgba(45,105,28,0.9) 100%);
+    border-color: rgba(70,150,45,0.6);
+    color: #f0fae8;
+    font-weight: 600;
+}
+@media (hover: hover) {
+    #startDateBox .entry-buttons button:first-child:hover {
+        background: linear-gradient(135deg, rgba(65,145,42,0.95) 0%, rgba(50,115,30,1) 100%);
+        border-color: rgba(90,170,55,0.8);
+        color: #fff;
+        box-shadow: 0 3px 14px rgba(50,120,30,0.35);
+    }
+}
+body.dark #startDateBox .entry-buttons button:first-child {
+    background: linear-gradient(135deg, rgba(70,145,48,0.7) 0%, rgba(50,115,30,0.75) 100%);
+    border-color: rgba(90,170,55,0.45);
+    color: #c8f0a8;
+}
+body.neon #startDateBox {
+    background: rgba(5,0,20,0.95);
+    border: 1px solid #ff00ff;
+    box-shadow: 0 0 30px rgba(255,0,255,0.4);
+}
+body.neon #startDateBox input[type="date"] {
+    background: rgba(10,0,30,0.8);
+    border-color: rgba(0,255,255,0.3);
+    color: #0ff;
+}
+/* === MONTH PICKER === */
+#monthLabel {
+    cursor: pointer;
+    display: inline-block;
+    padding: 4px 14px;
+    border-radius: 20px;
+    transition: background 0.18s, color 0.18s;
+    margin: 0 auto 0.5rem auto;
+}
+#monthLabel:hover {
+    background: rgba(74,140,53,0.14);
+    color: var(--primary);
+}
+body.dark #monthLabel:hover {
+    background: rgba(100,180,60,0.14);
+}
+body.neon #monthLabel:hover {
+    background: rgba(0,255,255,0.08);
+}
+#monthLabelWrap {
+    text-align: center;
+    margin-bottom: 0.5rem;
+}
+
+#monthPicker {
+    display: none;
+    position: absolute;
+    top: 25%;
+    left: 50%;
+    transform: translate(-50%, -50%) translateY(10px);
+    background: var(--card);
+    border-radius: 16px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.22);
+    z-index: 210;
+    width: 300px;
+    padding: 1.2rem 1rem 1rem 1rem;
+    opacity: 0;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    border: 1px solid rgba(80,140,50,0.2);
+}
+#monthPicker.show {
+    display: block;
+    opacity: 1;
+    transform: translate(-50%, -50%) translateY(0);
+}
+#monthPicker .mp-year-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+#monthPicker .mp-year-label {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--primary);
+    letter-spacing: 0.04em;
+}
+#monthPicker .mp-year-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 1px solid rgba(80,140,50,0.3);
+    background: rgba(80,140,50,0.1);
+    color: var(--primary);
+    font-size: 1.1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, transform 0.1s;
+    flex: none;
+    padding: 0;
+    font-weight: bold;
+}
+@media (hover: hover) {
+    #monthPicker .mp-year-btn:hover {
+        background: rgba(80,140,50,0.22);
+        transform: scale(1.12);
+    }
+}
+#monthPicker .mp-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 7px;
+}
+#monthPicker .mp-month-btn {
+    padding: 9px 4px;
+    border-radius: 10px;
+    border: 1px solid rgba(80,140,50,0.18);
+    background: rgba(80,140,50,0.07);
+    color: var(--text);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, transform 0.1s;
+    text-align: center;
+    flex: none;
+}
+@media (hover: hover) {
+    #monthPicker .mp-month-btn:hover {
+        background: rgba(80,140,50,0.18);
+        border-color: rgba(90,160,55,0.5);
+    }
+}
+#monthPicker .mp-month-btn:active {
+    animation: btnClick 0.25s ease forwards;
+}
+@media (hover: none) {
+    @media (hover: hover) {
+        #monthPicker .mp-month-btn:hover { transform: none; }
+    }
+}
+#monthPicker .mp-month-btn.mp-active {
+    background: linear-gradient(135deg, rgba(60,130,40,0.85), rgba(45,105,28,0.9));
+    border-color: rgba(70,150,45,0.7);
+    color: #f0fae8;
+    font-weight: 700;
+    box-shadow: 0 2px 8px rgba(50,120,30,0.3);
+}
+
+/* Dark mode */
+body.dark #monthPicker {
+    border-color: rgba(100,180,60,0.2);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.45);
+}
+body.dark #monthPicker .mp-year-btn {
+    background: rgba(80,150,50,0.14);
+    border-color: rgba(100,180,60,0.25);
+}
+body.dark #monthPicker .mp-month-btn {
+    background: rgba(80,150,50,0.1);
+    border-color: rgba(100,180,60,0.18);
+    color: var(--text);
+}
+@media (hover: hover) {
+    body.dark #monthPicker .mp-month-btn:hover {
+        background: rgba(90,160,55,0.22);
+        border-color: rgba(120,200,70,0.4);
+    }
+}
+body.dark #monthPicker .mp-month-btn.mp-active {
+    background: linear-gradient(135deg, rgba(70,145,48,0.75), rgba(50,115,30,0.8));
+    border-color: rgba(90,170,55,0.5);
+    color: #c8f0a8;
+}
+
+/* Neon mode */
+body.neon #monthPicker {
+    background: rgba(5,0,20,0.97);
+    border-color: #ff00ff;
+    box-shadow: 0 0 30px rgba(255,0,255,0.35);
+}
+body.neon #monthPicker .mp-year-label {
+    color: #0ff;
+    text-shadow: 0 0 8px #0ff;
+}
+body.neon #monthPicker .mp-year-btn {
+    background: rgba(0,255,255,0.07);
+    border-color: rgba(0,255,255,0.3);
+    color: #0ff;
+}
+@media (hover: hover) {
+    body.neon #monthPicker .mp-year-btn:hover {
+        background: rgba(0,255,255,0.16);
+    }
+}
+body.neon #monthPicker .mp-month-btn {
+    background: rgba(255,255,255,0.04);
+    border-color: rgba(0,255,255,0.2);
+    color: #cff;
+}
+@media (hover: hover) {
+    body.neon #monthPicker .mp-month-btn:hover {
+        background: rgba(0,255,255,0.1);
+        border-color: #0ff;
+        color: #fff;
+    }
+}
+body.neon #monthPicker .mp-month-btn.mp-active {
+    background: linear-gradient(135deg, rgba(255,0,255,0.4), rgba(0,255,255,0.25));
+    border-color: #ff00ff;
+    color: #fff;
+    box-shadow: 0 0 12px rgba(255,0,255,0.4);
+}
+/* === END MONTH PICKER === */
+
+/* sidebar badge showing the active start date */
+#startDateBadge {
+    font-size: 0.7rem;
+    opacity: 0.6;
+    margin-left: auto;
+    font-weight: 400;
+}
+/* === END TRACKING START DATE === */
+
+/* Notizfeld: App-Schrift statt nativer Textarea-Monospace-Schrift. */
+#noteInput,
+#noteInput::placeholder {
+    font-family: inherit !important;
+    font-size: 16px !important;
+    font-weight: 400 !important;
+    font-style: normal !important;
+    font-variant: normal !important;
+    line-height: normal !important;
+    letter-spacing: normal !important;
+    text-transform: none !important;
+    text-rendering: auto;
+    -webkit-font-smoothing: inherit;
+    -moz-osx-font-smoothing: inherit;
+}
+</style>
+</head>
+<body>
+<canvas id="neon-canvas"></canvas>
+
+<div id="topBar">
+    <h1>Draußen-Zeit</h1>
+    <div id="menuBtn">☰</div>
+</div>
+
+<!-- MAIN VIEW -->
+<div id="mainView">
+    <div id="monthLabelWrap">
+        <div id="monthLabel" onclick="openMonthPicker()" title="Klicken zum Auswählen"></div>
+    </div>
+
+    <!-- Month Picker -->
+    <div id="monthPicker">
+        <div class="mp-year-row">
+            <button class="mp-year-btn no-select" onclick="mpChangeYear(-1)">‹</button>
+            <span class="mp-year-label no-select" id="mpYearLabel"></span>
+            <button class="mp-year-btn no-select" onclick="mpChangeYear(1)">›</button>
+        </div>
+        <div class="mp-grid" id="mpGrid"></div>
+    </div>
+    <div id="weekdays">
+        <div>Mo</div><div>Di</div><div>Mi</div><div>Do</div><div>Fr</div><div>Sa</div><div>So</div>
+    </div>
+
+    <div id="calendar-container">
+        <div id="calendar"></div>
+    </div>
+
+    <div class="navButtons">
+        <button onclick="changeMonth(-1)">‹ Vorheriger Monat</button>
+        <button onclick="changeMonth(1)">Nächster Monat ›</button>
+    </div>
+
+    <div id="stats">
+        <strong>Monatsdurchschnitt:</strong> <span id="monthAvg">–</span><br>
+        <strong>Jahresdurchschnitt:</strong> <span id="yearAvg">–</span>
+    </div>
+
+    <div id="chartBox"><canvas id="chart"></canvas></div>
+    <div id="chartToast">📥 Diagramm gespeichert</div>
+
+    <!-- Chart download confirmation dialog -->
+    <div id="chartDownloadOverlay" style="display:none;position:fixed;inset:0;z-index:500;align-items:center;justify-content:center;background:rgba(0,0,0,0.45);backdrop-filter:blur(3px);" onclick="hideChartDownloadDialog()">
+        <div id="chartDownloadDialog" onclick="event.stopPropagation()">
+            <div class="cdd-icon">📊</div>
+            <div class="cdd-title">Diagramm herunterladen?</div>
+            <div class="cdd-sub" id="cddMonthLabel"></div>
+            <div class="cdd-buttons">
+                <button class="cdd-btn cdd-cancel" onclick="hideChartDownloadDialog()">Abbrechen</button>
+                <button class="cdd-btn cdd-confirm" onclick="downloadMonthChart()">⬇ Herunterladen</button>
+            </div>
+        </div>
+    </div>
+    <div id="yearView" style="display:none">
+        <canvas id="yearChart"></canvas>
+        <div style="display:flex;gap:10px;margin-top:15px;padding-bottom:3rem;">
+            <button onclick="closeYearView()" style="flex:1">
+                ⬅ Zurück
+            </button>
+            <button onclick="downloadYearChart()" style="flex:1">
+                ⬇ Diagramm herunterladen
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- STATS PAGE -->
+<div id="statsPage">
+    <h2>📊 Statistiken</h2>
+    <div style="display:flex;gap:10px;margin-bottom:16px;">
+        <button onclick="closeStatsPage()" style="flex:1">⬅ Zurück</button>
+        <button onclick="downloadStatsReport()" style="flex:1">⬇ Bericht herunterladen</button>
+    </div>
+    <div id="statsContent"></div>
+</div>
+
+<!-- MONATSRÜCKBLICK PAGE -->
+<div id="monthlyReviewPage">
+    <h2>📋 Monatsrückblick</h2>
+    <div style="display:flex;gap:10px;margin-bottom:16px;">
+        <button onclick="closeMonthlyReview()" style="flex:1">⬅ Zurück</button>
+        <button onclick="downloadMonthlyReport()" style="flex:1">⬇ Bericht herunterladen</button>
+    </div>
+    <div class="mr-nav">
+        <button class="mr-nav-btn no-select" onclick="mrChangeMonth(-1)">‹</button>
+        <span class="mr-nav-month no-select" id="mrNavLabel"></span>
+        <button class="mr-nav-btn no-select" onclick="mrChangeMonth(1)">›</button>
+    </div>
+    <div id="mrContent"></div>
+</div>
+
+<div id="entryBox">
+    <h3 id="selectedDate"></h3>
+    <input type="number" id="minutesInput" placeholder="Minuten draußen">
+    <textarea id="noteInput"
+        placeholder="Notizen (optional)"
+        style="margin-top:6px; resize:vertical; min-height:60px;">
+    </textarea>
+
+    <div class="entry-buttons">
+        <button onclick="saveEntry()">Speichern</button>
+        <button class="danger" onclick="deleteEntry()">Eintrag löschen</button>
+    </div>
+</div>
+
+<div id="startDateBox">
+    <h3>📅 Tracking-Startdatum</h3>
+    <p>Tage vor diesem Datum werden aus allen Berechnungen und Diagrammen ausgeschlossen.</p>
+    <input type="date" id="startDateInput">
+    <div class="start-date-current" id="startDateCurrent"></div>
+    <div class="entry-buttons">
+        <button onclick="saveStartDate()">Speichern</button>
+        <button class="danger" onclick="clearStartDate()">Zurücksetzen</button>
+    </div>
+    <div class="entry-buttons" style="margin-top:6px;">
+        <button onclick="closeStartDateDialog()">Abbrechen</button>
+    </div>
+</div>
+
+<div id="overlay"></div>
+
+<div id="sidebar">
+    <div id="sidebar-header">
+        <span class="sidebar-leaf">🌿</span>
+        <span class="sidebar-title">Einstellungen</span>
+    </div>
+    <div id="sidebar-inner">
+        <div class="sidebar-section-label">Ansicht</div>
+        <button class="sidebar-btn" onclick="toggleDarkMode()">🌙 Dark Mode</button>
+        <button class="sidebar-btn" onclick="toggleNeonMode()">🌈 Neon Mode</button>
+        <button class="sidebar-btn" onclick="openYearView()">📈 Jahresdiagramm</button>
+        <button class="sidebar-btn" onclick="openStatsPage()">📊 Statistiken</button>
+        <button class="sidebar-btn" onclick="openMonthlyReview()">📋 Monatsrückblick</button>
+
+        <div class="sidebar-section-label">Daten</div>
+        <button class="sidebar-btn" onclick="exportJSON()">📤 Export (JSON)</button>
+        <button class="sidebar-btn" onclick="importJSON()">📥 Import (JSON)</button>
+        <button class="sidebar-btn" onclick="exportCSV()">📊 Export (CSV)</button>
+        <button class="sidebar-btn" onclick="exportAll()">💾 Export (JSON + CSV)</button>
+        <input type="file" id="importFile" accept="application/json" style="display:none">
+
+        <div class="sidebar-section-label">Tracking</div>
+        <button class="sidebar-btn" onclick="openStartDateDialog()">📅 Startdatum <span id="startDateBadge"></span></button>
+
+        <div class="sidebar-section-label">Zurücksetzen</div>
+        <button class="sidebar-btn danger" onclick="resetMonth()">♻️ Monat zurücksetzen</button>
+        <button class="sidebar-btn danger" onclick="resetAll()">🧹 Alles zurücksetzen</button>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+let currentDate=new Date();
+let selectedDate=null;
+let data=JSON.parse(localStorage.getItem("outdoorData"))||{};
+let chart=null, yearChart=null;
+let trackingStart = null; // Date object or null
+(function(){
+    const s = localStorage.getItem("trackingStart");
+    if(s){ const d = new Date(s); if(!isNaN(d)) trackingStart = d; }
+})();
+
+// Returns true if the given key "YYYY-M-D" is before the trackingStart
+function isPreStart(key){
+    if(!trackingStart) return false;
+    const parts = key.split('-');
+    const d = new Date(parseInt(parts[0]), parseInt(parts[1])-1, parseInt(parts[2]));
+    d.setHours(0,0,0,0);
+    const ts = new Date(trackingStart);
+    ts.setHours(0,0,0,0);
+    return d < ts;
+}
+
+function normalizeEntry(v){
+    if(typeof v === "number"){
+        return { minutes: v, note: "" };
+    }
+    return v || { minutes: "", note: "" };
+}
+
+
+const calendar=document.getElementById("calendar");
+const monthLabel=document.getElementById("monthLabel");
+const entryBox=document.getElementById("entryBox");
+const minutesInput=document.getElementById("minutesInput");
+const selectedDateText=document.getElementById("selectedDate");
+const monthAvg=document.getElementById("monthAvg");
+const yearAvg=document.getElementById("yearAvg");
+const sidebar=document.getElementById("sidebar");
+const overlay=document.getElementById("overlay");
+const menuBtn=document.getElementById("menuBtn");
+
+if(localStorage.getItem("darkMode")==="true") document.body.classList.add("dark");
+// neonMode wird erst nach Funktionsdefinition initialisiert (siehe unten)
+
+function renderCalendar(){
+    calendar.innerHTML="";
+    const y=currentDate.getFullYear();
+    const m=currentDate.getMonth();
+    const firstDay=new Date(y,m,1).getDay();
+    const days=new Date(y,m+1,0).getDate();
+    monthLabel.textContent=currentDate.toLocaleDateString("de-DE",{month:"long",year:"numeric"});
+    let offset=(firstDay+6)%7;
+    for(let i=0;i<offset;i++) calendar.appendChild(document.createElement("div"));
+    for(let d=1;d<=days;d++){
+        const key=`${y}-${m+1}-${d}`;
+        const div=document.createElement("div");
+        div.className="day"; div.textContent=d;
+        const entry = normalizeEntry(data[key]);
+const v = entry.minutes;
+
+if(v !== "" && v !== undefined){
+    if(v < 30) div.classList.add("red");
+    else if(v < 60) div.classList.add("yellow");
+    else if(v < 90) div.classList.add("lightgreen");
+    else div.classList.add("darkgreen");
+}
+
+        const today=new Date();
+        if(today.getDate()===d && today.getMonth()===m && today.getFullYear()===y) {
+        div.classList.add("today");
+        }
+
+        if(isPreStart(key)){
+            div.classList.add("pre-start");
+            div.title = "Vor dem Tracking-Startdatum";
+        } else {
+            div.onclick=()=>openEntry(key);
+        }
+        calendar.appendChild(div);
+    }
+    updateAverages();
+    renderMonthChart();
+    renderYearChart();
+}
+
+function openEntry(key){
+    selectedDate=key;
+    const d=new Date(key);
+    selectedDateText.textContent=`Eintrag für ${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`;
+    const entry = normalizeEntry(data[key]);
+minutesInput.value = entry.minutes ?? "";
+document.getElementById("noteInput").value = entry.note ?? "";
+
+    calendar.classList.add("blurred");
+    entryBox.style.display="block";
+    requestAnimationFrame(()=>entryBox.classList.add("show"));
+    minutesInput.focus();
+    document.getElementById("weekdays").classList.add("blurred");
+    monthLabel.classList.add("blurred");
+
+}
+
+function closeEntry(){
+    entryBox.classList.remove("show");
+    document.getElementById("weekdays").classList.remove("blurred");
+    calendar.classList.remove("blurred");
+    monthLabel.classList.remove("blurred");
+    setTimeout(()=>{
+        entryBox.style.display="none";
+        minutesInput.value="";
+        document.getElementById("noteInput").value="";
+    },250);
+}
+
+function saveEntry(){
+    const m = parseInt(minutesInput.value);
+    const note = document.getElementById("noteInput").value.trim();
+
+    if(!isNaN(m)){
+        data[selectedDate] = {
+            minutes: m,
+            note: note
+        };
+    }
+    closeEntry();
+    persist();
+}
+
+function deleteEntry(){ delete data[selectedDate]; closeEntry(); persist();}
+function changeMonth(offset){ animateCalendar(offset); }
+
+function animateCalendar(direction) {
+    const container = document.getElementById("calendar-container");
+
+    // 1. Snapshot des aktuellen Kalenders als Ghost klonen
+    const ghost = calendar.cloneNode(true);
+    ghost.removeAttribute("id");
+    ghost.className = "calendar-ghost";
+    // Ghost exakt auf Höhe des echten Kalenders positionieren
+    ghost.style.top = "0px";
+    container.appendChild(ghost);
+
+    // 2. Monat wechseln und neu rendern (unsichtbar, noch kein Slide)
+    currentDate.setMonth(currentDate.getMonth() + direction);
+    renderCalendar();
+
+    // 3. Animationsklassen setzen
+    const inClass  = direction > 0 ? "slide-in-right" : "slide-in-left";
+    const outClass = direction > 0 ? "slide-out-left" : "slide-out-right";
+
+    calendar.classList.add(inClass);
+    ghost.classList.add(outClass);
+
+    // 4. Nach der Animation aufräumen
+    calendar.addEventListener("animationend", () => {
+        calendar.classList.remove(inClass);
+    }, { once: true });
+    ghost.addEventListener("animationend", () => {
+        ghost.remove();
+    }, { once: true });
+}
+
+function addSwipeListener(el){
+    let startX = null;
+    let startY = null;
+    let isSwiping = false;
+    const threshold = 50;
+    const angleLimit = 35; // Grad – verhindert versehentliche vertikale Swipes
+
+    el.addEventListener("touchstart", e => {
+        startX = e.changedTouches[0].screenX;
+        startY = e.changedTouches[0].screenY;
+        isSwiping = false;
+    }, { passive: true });
+
+    el.addEventListener("touchmove", e => {
+        if (startX === null) return;
+        const dx = e.changedTouches[0].screenX - startX;
+        const dy = e.changedTouches[0].screenY - startY;
+        if (Math.abs(dx) > 10 || Math.abs(dy) > 10) isSwiping = true;
+    }, { passive: true });
+
+    el.addEventListener("touchend", e => {
+        if (startX === null || !isSwiping) return;
+        const dx = startX - e.changedTouches[0].screenX;
+        const dy = e.changedTouches[0].screenY - startY;
+        const angle = Math.abs(Math.atan2(dy, Math.abs(dx)) * 180 / Math.PI);
+        if (Math.abs(dx) > threshold && angle < angleLimit) {
+            animateCalendar(dx > 0 ? 1 : -1);
+        }
+        startX = null;
+        startY = null;
+        isSwiping = false;
+    });
+}
+// ===== MONTH PICKER =====
+const DE_MONTHS_SHORT = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+let mpPickerYear = new Date().getFullYear();
+
+function openMonthPicker(){
+    const picker = document.getElementById("monthPicker");
+    mpPickerYear = currentDate.getFullYear();
+    renderMonthPickerGrid();
+    overlay.classList.add("show");
+    picker.style.display = "block";
+    requestAnimationFrame(() => picker.classList.add("show"));
+}
+
+function closeMonthPicker(){
+    const picker = document.getElementById("monthPicker");
+    picker.classList.remove("show");
+    overlay.classList.remove("show");
+    setTimeout(() => { picker.style.display = "none"; }, 230);
+}
+
+function renderMonthPickerGrid(){
+    document.getElementById("mpYearLabel").textContent = mpPickerYear;
+    const grid = document.getElementById("mpGrid");
+    grid.innerHTML = "";
+    for(let i = 0; i < 12; i++){
+        const btn = document.createElement("button");
+        btn.className = "mp-month-btn no-select";
+        btn.textContent = DE_MONTHS_SHORT[i];
+        if(mpPickerYear === currentDate.getFullYear() && i === currentDate.getMonth()){
+            btn.classList.add("mp-active");
+        }
+        const monthIndex = i;
+        btn.onclick = () => {
+            currentDate.setFullYear(mpPickerYear);
+            currentDate.setMonth(monthIndex);
+            renderCalendar();
+            closeMonthPicker();
+        };
+        grid.appendChild(btn);
+    }
+}
+
+function mpChangeYear(delta){
+    mpPickerYear += delta;
+    renderMonthPickerGrid();
+}
+// ===== END MONTH PICKER =====
+
+function updateAverages(){
+    const y=currentDate.getFullYear();
+    const m=currentDate.getMonth();
+    let monthSum=0, monthDays=0, yearSum=0, yearDays=0;
+    for(const k in data){
+        if(isPreStart(k)) continue;
+        const d=new Date(k);
+        const entry = normalizeEntry(data[k]);
+        const v = entry.minutes;
+        if(!isNaN(v)){
+            if(d.getFullYear()===y){
+                yearSum += v;
+                yearDays++;
+                if(d.getMonth()===m){
+                    monthSum += v;
+                    monthDays++;
+                }
+            }
+        }
+    }
+    monthAvg.textContent=monthDays ? Math.round(monthSum/monthDays)+" min/Tag":"–";
+    yearAvg.textContent=yearDays ? Math.round(yearSum/yearDays)+" min/Tag":"–";
+}
+
+function renderMonthChart(){
+    if(chart) chart.destroy();
+    const y=currentDate.getFullYear(), m=currentDate.getMonth();
+    const labels=[], values=[], colors=[];
+    const days=new Date(y,m+1,0).getDate();
+    for(let d=1;d<=days;d++){
+        const key=`${y}-${m+1}-${d}`;
+        labels.push(d);
+        if(isPreStart(key)){
+            values.push(null);
+            colors.push("rgba(150,160,140,0.15)");
+        } else {
+            const v = normalizeEntry(data[key]).minutes || 0;
+            values.push(v);
+            const isDark2 = document.body.classList.contains("dark");
+            if(isDark2){
+                if(v<30) colors.push("#c0424e"); else if(v<60) colors.push("#b8960a"); else if(v<90) colors.push("#2e8c44"); else colors.push("#1c6b30");
+            } else {
+                if(v<30) colors.push("#f5a8ae"); else if(v<60) colors.push("#f5e580"); else if(v<90) colors.push("#93d49b"); else colors.push("#4caf62");
+            }
+        }
+    }
+    chart=new Chart(document.getElementById("chart").getContext("2d"),{
+        type:"bar",
+        data:{labels,datasets:[{label:"Minuten draußen",data:values,backgroundColor:colors}]},
+        options:{responsive:true,scales:{y:{beginAtZero:true}}}
+    });
+}
+
+// ===== LONG-PRESS DOWNLOAD FOR MONTH CHART =====
+(function(){
+    const box = document.getElementById("chartBox");
+    let pressTimer = null;
+    const HOLD_MS = 1000;
+
+    function startPress(e){
+        if(e.target.closest && e.target.closest(".day")) return;
+        pressTimer = setTimeout(()=>{
+            pressTimer = null;
+            box.classList.remove("pressing");
+            showChartDownloadDialog();
+        }, HOLD_MS);
+        box.classList.add("pressing");
+    }
+    function cancelPress(){
+        if(pressTimer){ clearTimeout(pressTimer); pressTimer = null; }
+        box.classList.remove("pressing");
+    }
+
+    box.addEventListener("mousedown",  startPress);
+    box.addEventListener("touchstart", startPress, {passive:true});
+    box.addEventListener("mouseup",    cancelPress);
+    box.addEventListener("mouseleave", cancelPress);
+    box.addEventListener("touchend",   cancelPress);
+    box.addEventListener("touchcancel",cancelPress);
+    box.addEventListener("contextmenu", e => e.preventDefault());
+})();
+
+function showChartDownloadDialog(){
+    const monthName = currentDate.toLocaleDateString("de-DE",{month:"long",year:"numeric"});
+    document.getElementById("cddMonthLabel").textContent = monthName;
+    document.getElementById("chartDownloadOverlay").style.display = "flex";
+}
+function hideChartDownloadDialog(){
+    document.getElementById("chartDownloadOverlay").style.display = "none";
+}
+
+function downloadMonthChart(){
+    hideChartDownloadDialog();
+
+    const canvas = document.getElementById("chart");
+    const monthName = currentDate.toLocaleDateString("de-DE",{month:"long",year:"numeric"});
+    const y = currentDate.getFullYear();
+    const m = String(currentDate.getMonth()+1).padStart(2,'0');
+
+    const isDark = document.body.classList.contains("dark");
+    const isNeon = document.body.classList.contains("neon");
+    const textColor = (isDark||isNeon) ? "#ffffff" : "#1a2218";
+    const gridColor = (isDark||isNeon) ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.07)";
+    const bgColor   = isNeon ? "#000000" : (isDark ? "#1a2019" : "#f8faf6");
+
+    // Build a temp off-screen chart with title + watermark
+    const tmpCanvas = document.createElement("canvas");
+    tmpCanvas.width  = 900;
+    tmpCanvas.height = 420;
+    tmpCanvas.style.position = "absolute";
+    tmpCanvas.style.left = "-9999px";
+    document.body.appendChild(tmpCanvas);
+
+    // Get current data from live chart
+    const liveData = chart.data;
+
+    const tmpChart = new Chart(tmpCanvas.getContext("2d"), {
+        type: "bar",
+        data: JSON.parse(JSON.stringify(liveData)),
+        options: {
+            responsive: false,
+            animation: false,
+            plugins: {
+                title: {
+                    display: true,
+                    text: `🌿 Draußen-Zeit – ${monthName}`,
+                    color: textColor,
+                    font: { size: 16, weight: '700' },
+                    padding: { bottom: 12 }
+                },
+                legend: { labels: { color: textColor } }
+            },
+            scales: {
+                x: { ticks: { color: textColor }, grid: { color: gridColor } },
+                y: { beginAtZero: true, ticks: { color: textColor }, grid: { color: gridColor } }
+            }
+        }
+    });
+
+    requestAnimationFrame(()=>{
+        const PADDING = 20;
+        const out = document.createElement("canvas");
+        out.width  = tmpCanvas.width  + PADDING * 2;
+        out.height = tmpCanvas.height + PADDING * 2;
+        const ctx = out.getContext("2d");
+
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, out.width, out.height);
+        ctx.drawImage(tmpCanvas, PADDING, PADDING);
+
+        // Watermark
+        ctx.font = "12px system-ui, sans-serif";
+        ctx.fillStyle = isNeon ? "rgba(0,255,255,0.35)" : (isDark ? "rgba(200,230,180,0.3)" : "rgba(60,100,40,0.3)");
+        ctx.textAlign = "right";
+        ctx.fillText("Draußen-Zeit Tracker", out.width - PADDING, out.height - 6);
+
+        const link = document.createElement("a");
+        link.download = `draussen-monatsdiagramm-${y}-${m}.png`;
+        link.href = out.toDataURL("image/png");
+        link.click();
+
+        tmpChart.destroy();
+        document.body.removeChild(tmpCanvas);
+
+        // Toast
+        const toast = document.getElementById("chartToast");
+        toast.textContent = `📥 ${monthName} gespeichert`;
+        toast.classList.add("show");
+        setTimeout(()=> toast.classList.remove("show"), 2500);
+    });
+}
+// ===== END LONG-PRESS DOWNLOAD =====
+
+function openYearView(){
+    document.getElementById("calendar-container").classList.add("hidden");
+    document.querySelector(".navButtons").classList.add("hidden");
+    document.getElementById("stats").classList.add("hidden");
+    document.getElementById("chartBox").classList.add("hidden");
+    document.getElementById("weekdays").classList.add("hidden");
+    document.getElementById("monthLabel").classList.add("hidden");
+
+    document.getElementById("yearView").style.display="block";
+
+    requestAnimationFrame(()=>renderYearChart());
+}
+
+function closeYearView(){
+    document.getElementById("calendar-container").classList.remove("hidden");
+    document.querySelector(".navButtons").classList.remove("hidden");
+    document.getElementById("stats").classList.remove("hidden");
+    document.getElementById("chartBox").classList.remove("hidden");
+    document.getElementById("weekdays").classList.remove("hidden");
+    document.getElementById("monthLabel").classList.remove("hidden");
+
+    document.getElementById("yearView").style.display="none";
+}
+
+function downloadYearChart(){
+    const canvas = document.getElementById("yearChart");
+    const y = currentDate.getFullYear();
+
+    // Create a temporary canvas with white/dark background
+    const tmp = document.createElement("canvas");
+    tmp.width = canvas.width;
+    tmp.height = canvas.height;
+    const ctx2 = tmp.getContext("2d");
+
+    const isDark = document.body.classList.contains("dark");
+    const isNeon = document.body.classList.contains("neon");
+    ctx2.fillStyle = isNeon ? "#000000" : (isDark ? "#111612" : "#f8faf6");
+    ctx2.fillRect(0, 0, tmp.width, tmp.height);
+    ctx2.drawImage(canvas, 0, 0);
+
+    const link = document.createElement("a");
+    link.download = `draussen-jahresdiagramm-${y}.png`;
+    link.href = tmp.toDataURL("image/png");
+    link.click();
+}
+
+
+function renderYearChart(){
+    if(yearChart) yearChart.destroy();
+
+    const ctx = document.getElementById("yearChart").getContext("2d");
+    const y = currentDate.getFullYear();
+
+    const labels = [];
+    const values = [];
+
+    for(let m = 0; m < 12; m++){
+        const days = new Date(y, m + 1, 0).getDate();
+        for(let d = 1; d <= days; d++){
+            const key = `${y}-${m+1}-${d}`;
+            labels.push(`${String(d).padStart(2,"0")}.${String(m+1).padStart(2,"0")}`);
+            if(isPreStart(key)){
+                values.push(null);
+            } else {
+                const entry = normalizeEntry(data[key]);
+                values.push(entry.minutes || 0);
+            }
+        }
+    }
+
+    const isDark = document.body.classList.contains("dark");
+    const isNeon = document.body.classList.contains("neon");
+    const textColor = (isDark||isNeon) ? "#ffffff" : "#000000";
+    const gridColor = (isDark||isNeon) ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.1)";
+    const lineColor = isNeon ? "#ff00ff" : (isDark ? "#72b85a" : "#3a8c28");
+    const fillColor = isNeon ? "rgba(255,0,255,0.2)" : (isDark ? "rgba(114,184,90,0.22)" : "rgba(58,140,40,0.18)");
+
+    yearChart = new Chart(ctx, {
+        type: "line",
+        data: {
+            labels,
+            datasets: [{
+                label: "Minuten draußen",
+                data: values,
+                borderColor: lineColor,
+                backgroundColor: fillColor,
+                fill: true,
+                tension: 0.25,
+                pointRadius: 2,
+                pointHoverRadius: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    ticks: {
+                        color: textColor,
+                        autoSkip: true,
+                        maxTicksLimit: 12,
+                        maxRotation: 0
+                    },
+                    grid: { color: gridColor }
+                },
+                y: {
+                    beginAtZero: true,
+                    ticks: { color: textColor },
+                    grid: { color: gridColor }
+                }
+            },
+            plugins: {
+                legend: { labels: { color: textColor } },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => `${ctx.parsed.y} Minuten`
+                    }
+                }
+            }
+        }
+    });
+}
+
+
+// ===== EXPORT with all days =====
+function getAllDaysInData(){
+    // Find earliest date across all data, fill gaps with 0 up to TODAY
+    const keys = Object.keys(data);
+    if(keys.length === 0) return {};
+
+    // find min year from data
+    let minYear = Infinity;
+    keys.forEach(k => {
+        const parts = k.split('-');
+        const y = parseInt(parts[0]);
+        if(y < minYear) minYear = y;
+    });
+
+    const today = new Date();
+    const todayY = today.getFullYear();
+    const todayM = today.getMonth()+1;
+    const todayD = today.getDate();
+
+    const filled = {};
+    for(let y = minYear; y <= todayY; y++){
+        const maxMonth = (y === todayY) ? todayM : 12;
+        for(let m = 1; m <= maxMonth; m++){
+            const daysInMonth = new Date(y, m, 0).getDate();
+            const maxDay = (y === todayY && m === todayM) ? todayD : daysInMonth;
+            for(let d = 1; d <= maxDay; d++){
+                const key = `${y}-${m}-${d}`;
+                if(isPreStart(key)) continue;
+                if(data[key] !== undefined){
+                    filled[key] = data[key];
+                } else {
+                    filled[key] = { minutes: 0, note: "" };
+                }
+            }
+        }
+    }
+    return filled;
+}
+
+function exportJSON(){
+    const filled = getAllDaysInData();
+    const blob=new Blob([JSON.stringify({outdoorData:filled,darkMode:localStorage.getItem("darkMode")},null,2)],{type:"application/json"});
+    download(blob,"draussen-zeit-backup.json");
+}
+function importJSON(){ document.getElementById("importFile").click(); }
+document.getElementById("importFile").addEventListener("change",function(){
+    const file=this.files[0]; if(!file) return;
+    const reader=new FileReader();
+    reader.onload=e=>{
+        try{
+            const imported=JSON.parse(e.target.result);
+            if(!imported.outdoorData) throw "invalid";
+            if(!confirm("Aktuelle Daten überschreiben?")) return;
+            // Only import entries up to and including today
+            const today = new Date();
+            today.setHours(0,0,0,0);
+            const filtered = {};
+            Object.keys(imported.outdoorData).forEach(k => {
+                const parts = k.split('-');
+                const entryDate = new Date(parseInt(parts[0]), parseInt(parts[1])-1, parseInt(parts[2]));
+                if(entryDate <= today) filtered[k] = imported.outdoorData[k];
+            });
+            data=filtered;
+            localStorage.setItem("outdoorData",JSON.stringify(data));
+            if(imported.darkMode!==undefined){ localStorage.setItem("darkMode",imported.darkMode); document.body.classList.toggle("dark",imported.darkMode==="true"); }
+            renderCalendar(); closeMenu(); alert("Import erfolgreich ✅");
+        }catch{ alert("Ungültige Import-Datei"); }
+    };
+    reader.readAsText(file); this.value="";
+});
+
+function exportCSV(){
+    const filled = getAllDaysInData();
+    let csv="Datum;Minuten;Notizen\n";
+    Object.keys(filled).sort((a,b)=>{
+        const ap=a.split('-').map(Number), bp=b.split('-').map(Number);
+        return new Date(ap[0],ap[1]-1,ap[2]) - new Date(bp[0],bp[1]-1,bp[2]);
+    }).forEach(k=>{
+        const e = normalizeEntry(filled[k]);
+        const mins = (e.minutes === "" || e.minutes === undefined || e.minutes === null) ? 0 : e.minutes;
+        const note = (e.note||'').replace(/"/g,'""');
+        csv+=`${k};${mins};"${note}"\n`;
+    });
+    // Encode as UTF-16 LE with BOM for maximum compatibility with mobile spreadsheet apps
+    const bom = new Uint8Array([0xFF, 0xFE]);
+    const utf16 = new Uint16Array(csv.length);
+    for(let i=0;i<csv.length;i++) utf16[i]=csv.charCodeAt(i);
+    const buf = new Uint8Array(2 + utf16.byteLength);
+    buf.set(bom, 0);
+    buf.set(new Uint8Array(utf16.buffer), 2);
+    download(new Blob([buf],{type:"text/csv;charset=utf-16le"}),"draussen-zeit.csv");
+}
+
+function exportAll(){
+    exportJSON();
+    exportCSV();
+}
+
+function download(blob,name){ const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=name; a.click(); URL.revokeObjectURL(url); }
+
+function resetMonth(){ if(!confirm("Diesen Monat wirklich löschen?")) return; const y=currentDate.getFullYear(); const m=currentDate.getMonth(); for(const k in data){ const d=new Date(k); if(d.getFullYear()===y && d.getMonth()===m) delete data[k]; } closeMenu(); persist(); }
+function resetAll(){ if(!confirm("Wirklich ALLES löschen?")) return; data={}; closeMenu(); persist(); }
+
+function persist(){ localStorage.setItem("outdoorData",JSON.stringify(data)); renderCalendar(); }
+
+function closeMenu(){ sidebar.classList.remove("open"); overlay.classList.remove("show"); }
+menuBtn.onclick=()=>{ sidebar.classList.add("open"); overlay.classList.add("show"); };
+overlay.onclick=closeMenu;
+
+function toggleDarkMode(){
+    if(document.body.classList.contains("neon")){
+        document.body.classList.remove("neon");
+        localStorage.setItem("neonMode","false");
+        stopNeonBg();
+    }
+    document.body.classList.toggle("dark");
+    localStorage.setItem("darkMode",document.body.classList.contains("dark"));
+
+    if(document.getElementById("yearView").style.display === "block"){
+        renderYearChart();
+    }
+}
+
+function toggleNeonMode(){
+    if(document.body.classList.contains("neon")){
+        document.body.classList.remove("neon");
+        localStorage.setItem("neonMode","false");
+        stopNeonBg();
+    } else {
+        document.body.classList.remove("dark");
+        localStorage.setItem("darkMode","false");
+        document.body.classList.add("neon");
+        localStorage.setItem("neonMode","true");
+        startNeonBg();
+    }
+    if(document.getElementById("yearView").style.display === "block"){
+        renderYearChart();
+    }
+}
+
+// ===== NEON BACKGROUND =====
+var neonAnimId = null;
+function startNeonBg(){
+    const canvas = document.getElementById("neon-canvas");
+    const ctx = canvas.getContext("2d");
+    let W, H;
+    function resize(){ W=canvas.width=window.innerWidth; H=canvas.height=window.innerHeight; }
+    resize();
+    window.addEventListener("resize", resize);
+
+    const particles = [];
+    const COLORS = ["#ff00ff","#00ffff","#ff0066","#66ff00","#ff9900","#0066ff"];
+    for(let i=0;i<60;i++){
+        particles.push({
+            x: Math.random()*1000,
+            y: Math.random()*1000,
+            vx: (Math.random()-0.5)*0.6,
+            vy: (Math.random()-0.5)*0.6,
+            r: Math.random()*2+1,
+            color: COLORS[Math.floor(Math.random()*COLORS.length)],
+            alpha: Math.random()*0.7+0.3
+        });
+    }
+
+    function draw(){
+        ctx.clearRect(0,0,W,H);
+        // draw connections
+        for(let i=0;i<particles.length;i++){
+            for(let j=i+1;j<particles.length;j++){
+                const dx=particles[i].x-particles[j].x;
+                const dy=particles[i].y-particles[j].y;
+                const dist=Math.sqrt(dx*dx+dy*dy);
+                if(dist<120){
+                    ctx.save();
+                    ctx.globalAlpha=(1-dist/120)*0.4;
+                    ctx.strokeStyle=particles[i].color;
+                    ctx.lineWidth=0.8;
+                    ctx.shadowBlur=6;
+                    ctx.shadowColor=particles[i].color;
+                    ctx.beginPath();
+                    ctx.moveTo(particles[i].x,particles[i].y);
+                    ctx.lineTo(particles[j].x,particles[j].y);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+            }
+        }
+        // draw particles
+        particles.forEach(p=>{
+            ctx.save();
+            ctx.globalAlpha=p.alpha;
+            ctx.fillStyle=p.color;
+            ctx.shadowBlur=12;
+            ctx.shadowColor=p.color;
+            ctx.beginPath();
+            ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+            ctx.fill();
+            ctx.restore();
+            p.x+=p.vx; p.y+=p.vy;
+            if(p.x<0||p.x>W) p.vx*=-1;
+            if(p.y<0||p.y>H) p.vy*=-1;
+        });
+        neonAnimId = requestAnimationFrame(draw);
+    }
+    draw();
+}
+function stopNeonBg(){
+    if(neonAnimId){ cancelAnimationFrame(neonAnimId); neonAnimId=null; }
+    const canvas = document.getElementById("neon-canvas");
+    canvas.getContext("2d").clearRect(0,0,canvas.width,canvas.height);
+}
+
+// ===== STATS PAGE =====
+function openStatsPage(){
+    closeMenu();
+    document.getElementById("mainView").classList.add("hidden");
+    renderStatsPage();
+    document.getElementById("statsPage").style.display="block";
+}
+function closeStatsPage(){
+    document.getElementById("statsPage").style.display="none";
+    document.getElementById("mainView").classList.remove("hidden");
+}
+
+function renderStatsPage(){
+    const content = document.getElementById("statsContent");
+    content.innerHTML = "";
+
+    // Collect all data
+    const allEntries = {}; // year-month -> [minutes]
+    const allDays = {}; // year-month-day -> minutes
+    let totalMinutes = 0, totalDaysWithData = 0;
+    let bestDay = null, bestDayMin = 0;
+    let longestStreak = 0, currentStreak = 0, streakEnd = null;
+
+    // Build monthly sums
+    const monthlyData = {}; // "YYYY-M" -> {sum, count}
+
+    Object.keys(data).sort().forEach(k => {
+        if(isPreStart(k)) return;
+        const e = normalizeEntry(data[k]);
+        const v = e.minutes;
+        if(v === "" || v === undefined || isNaN(v)) return;
+        const parts = k.split('-');
+        const y = parseInt(parts[0]), m = parseInt(parts[1]);
+        const mk = `${y}-${m}`;
+        if(!monthlyData[mk]) monthlyData[mk] = {sum:0, count:0, year:y, month:m};
+        monthlyData[mk].sum += v;
+        monthlyData[mk].count++;
+        totalMinutes += v;
+        totalDaysWithData++;
+        if(v > bestDayMin){ bestDayMin=v; bestDay=k; }
+    });
+
+    // Monthly averages (per recorded day)
+    const monthAvgs = Object.keys(monthlyData).map(mk => ({
+        ...monthlyData[mk],
+        avg: Math.round(monthlyData[mk].sum / monthlyData[mk].count)
+    }));
+
+    // Best month by avg
+    let bestMonth = null;
+    if(monthAvgs.length > 0){
+        bestMonth = monthAvgs.reduce((a,b) => a.avg > b.avg ? a : b);
+    }
+
+    // Worst month by avg
+    let worstMonth = null;
+    if(monthAvgs.length > 0){
+        worstMonth = monthAvgs.reduce((a,b) => a.avg < b.avg ? a : b);
+    }
+
+    // Month with most total minutes
+    let mostTotalMonth = null;
+    if(monthAvgs.length > 0){
+        mostTotalMonth = monthAvgs.reduce((a,b) => a.sum > b.sum ? a : b);
+    }
+
+    // Longest streak of days with >0 minutes
+    const sortedKeys = Object.keys(data).filter(k => {
+        if(isPreStart(k)) return false;
+        const v = normalizeEntry(data[k]).minutes;
+        return v !== "" && v !== undefined && !isNaN(v) && v > 0;
+    }).sort();
+
+    let streak = 0, maxStreak = 0, maxStreakEnd = null;
+    for(let i=0; i<sortedKeys.length; i++){
+        if(i===0){
+            streak=1;
+        } else {
+            const prev = new Date(sortedKeys[i-1]);
+            const curr = new Date(sortedKeys[i]);
+            const diff = (curr - prev) / (1000*60*60*24);
+            if(diff===1){ streak++; } else { streak=1; }
+        }
+        if(streak > maxStreak){ maxStreak=streak; maxStreakEnd=sortedKeys[i]; }
+    }
+
+    // Total hours
+    const totalHours = Math.floor(totalMinutes / 60);
+    const remMins = totalMinutes % 60;
+
+    // Current streak
+    let curStreak = 0;
+    const today = new Date();
+    for(let i=0; ; i++){
+        const d = new Date(today);
+        d.setDate(d.getDate()-i);
+        const k = `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
+        if(isPreStart(k)) break;
+        const v = normalizeEntry(data[k]).minutes;
+        if(v > 0) curStreak++;
+        else break;
+    }
+
+    // Average per weekday
+    const weekdaySum = [0,0,0,0,0,0,0];
+    const weekdayCount = [0,0,0,0,0,0,0];
+    Object.keys(data).forEach(k => {
+        if(isPreStart(k)) return;
+        const e = normalizeEntry(data[k]);
+        const v = e.minutes;
+        if(v === "" || isNaN(v) || v === undefined) return;
+        const parts = k.split('-');
+        const d = new Date(parseInt(parts[0]), parseInt(parts[1])-1, parseInt(parts[2]));
+        const wd = (d.getDay()+6)%7; // 0=Mo
+        weekdaySum[wd] += v;
+        weekdayCount[wd] += 1;
+    });
+    const weekdays = ['Mo','Di','Mi','Do','Fr','Sa','So'];
+    let bestWD = 0;
+    for(let i=1;i<7;i++){
+        if((weekdayCount[i]?weekdaySum[i]/weekdayCount[i]:0) > (weekdayCount[bestWD]?weekdaySum[bestWD]/weekdayCount[bestWD]:0)) bestWD=i;
+    }
+
+    const monthNames = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+
+    function formatKey(k){
+        if(!k) return "–";
+        const p=k.split('-');
+        return `${p[2].padStart(2,'0')}.${p[1].padStart(2,'0')}.${p[0]}`;
+    }
+
+    function formatKeyWithWeekday(k){
+        if(!k) return "–";
+        const p=k.split('-');
+        const d = new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2]));
+        const wdNames = ['So','Mo','Di','Mi','Do','Fr','Sa'];
+        const wd = wdNames[d.getDay()];
+        return `${wd}, ${p[2].padStart(2,'0')}.${p[1].padStart(2,'0')}.${p[0]}`;
+    }
+
+    // Convert minutes to readable short form: "Xh Ymin"
+    function minsToShort(mins){
+        const h = Math.floor(mins / 60);
+        const m = mins % 60;
+        if(h === 0) return `${m}min`;
+        if(m === 0) return `${h}h`;
+        return `${h}h ${m}min`;
+    }
+
+    // Convert minutes to full breakdown (years/days/hours/minutes)
+    function minsToFull(mins){
+        const MINS_PER_HOUR  = 60;
+        const MINS_PER_DAY   = 60 * 24;
+        const MINS_PER_YEAR  = 60 * 24 * 365;
+
+        const years = Math.floor(mins / MINS_PER_YEAR);
+        let rem = mins % MINS_PER_YEAR;
+        const days  = Math.floor(rem / MINS_PER_DAY);
+        rem = rem % MINS_PER_DAY;
+        const hours = Math.floor(rem / MINS_PER_HOUR);
+        const m     = rem % MINS_PER_HOUR;
+
+        const parts = [];
+        if(years > 0) parts.push(`${years} Jahr${years===1?'':'e'}`);
+        if(days  > 0) parts.push(`${days} Tag${days===1?'':'e'}`);
+        if(hours > 0) parts.push(`${hours} Stunde${hours===1?'':'n'}`);
+        if(m     > 0) parts.push(`${m} Minute${m===1?'':'n'}`);
+        return parts.join(', ') || '0 Minuten';
+    }
+
+    // Build stats array with optional sub-lines
+    const stats = [
+        {
+            icon:"🏆",
+            title:"Bester Monat (Durchschnitt)",
+            value: bestMonth ? `${monthNames[bestMonth.month-1]} ${bestMonth.year} – ${bestMonth.avg} min/Tag` : "–",
+            sub: bestMonth ? `(${minsToShort(bestMonth.avg)})` : null
+        },
+        {
+            icon:"📉",
+            title:"Schwächster Monat (Durchschnitt)",
+            value: worstMonth ? `${monthNames[worstMonth.month-1]} ${worstMonth.year} – ${worstMonth.avg} min/Tag` : "–",
+            sub: worstMonth ? `(${minsToShort(worstMonth.avg)})` : null
+        },
+        {
+            icon:"⭐",
+            title:"Bester einzelner Tag",
+            value: bestDay ? `${formatKeyWithWeekday(bestDay)} – ${bestDayMin} min` : "–",
+            sub: bestDay ? `(${minsToShort(bestDayMin)})` : null
+        },
+        {
+            icon:"🔥",
+            title:"Längste Serie (Tage in Folge)",
+            value: maxStreak > 0 ? `${maxStreak} Tage` + (maxStreakEnd ? ` (bis ${formatKey(maxStreakEnd)})` : "") : "–",
+            sub: null
+        },
+        {
+            icon:"⚡",
+            title:"Aktuelle Serie",
+            value: curStreak > 0 ? `${curStreak} Tag${curStreak===1?'':'e'}` : "Keine aktive Serie",
+            sub: null
+        },
+        {
+            icon:"⏱️",
+            title:"Gesamtzeit (alle Einträge)",
+            value: totalDaysWithData > 0 ? `${totalMinutes} Minuten` : "–",
+            sub: totalDaysWithData > 0 ? [
+                `(${totalHours}h ${remMins}min)`,
+                `(${minsToFull(totalMinutes)})`,
+                `Getrackt an ${totalDaysWithData} Tagen`
+            ] : null
+        },
+        {
+            icon:"📅",
+            title:"Monat mit meisten Gesamtminuten",
+            value: mostTotalMonth ? `${monthNames[mostTotalMonth.month-1]} ${mostTotalMonth.year} – ${mostTotalMonth.sum} min` : "–",
+            sub: mostTotalMonth ? `(${minsToShort(mostTotalMonth.sum)})` : null
+        },
+        {
+            icon:"📆",
+            title:`Bester Wochentag im Durchschnitt`,
+            value: weekdayCount[bestWD] > 0 ? `${weekdays[bestWD]} – Ø ${Math.round(weekdaySum[bestWD]/weekdayCount[bestWD])} min` : "–",
+            sub: weekdayCount[bestWD] > 0 ? `(${minsToShort(Math.round(weekdaySum[bestWD]/weekdayCount[bestWD]))})` : null
+        }
+    ];
+
+    stats.forEach(s => {
+        const card = document.createElement("div");
+        card.className = "stat-card";
+        let subHtml = "";
+        if(s.sub){
+            if(Array.isArray(s.sub)){
+                subHtml = s.sub.map(line => `<div class="stat-sub">${line}</div>`).join('');
+            } else {
+                subHtml = `<div class="stat-sub">${s.sub}</div>`;
+            }
+        }
+        card.innerHTML = `<h3>${s.icon} ${s.title}</h3><div class="stat-value">${s.value}</div>${subHtml}`;
+        content.appendChild(card);
+    });
+}
+
+// ===== MONATSRÜCKBLICK =====
+let mrYear = new Date().getFullYear();
+let mrMonth = new Date().getMonth() + 1; // 1-based
+
+function openMonthlyReview(){
+    closeMenu();
+    mrYear = currentDate.getFullYear();
+    mrMonth = currentDate.getMonth() + 1;
+    document.getElementById("mainView").classList.add("hidden");
+    document.getElementById("monthlyReviewPage").style.display = "block";
+    renderMonthlyReview();
+}
+
+function closeMonthlyReview(){
+    document.getElementById("monthlyReviewPage").style.display = "none";
+    document.getElementById("mainView").classList.remove("hidden");
+}
+
+function mrChangeMonth(dir){
+    mrMonth += dir;
+    if(mrMonth < 1){ mrMonth = 12; mrYear--; }
+    if(mrMonth > 12){ mrMonth = 1; mrYear++; }
+    renderMonthlyReview();
+}
+
+function getMonthStats(year, month){
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const entries = [];
+    let sum = 0, trackedDays = 0;
+    let bestDay = null, bestMin = 0;
+    let worstDay = null, worstMin = Infinity;
+
+    for(let d = 1; d <= daysInMonth; d++){
+        const key = `${year}-${month}-${d}`;
+        if(isPreStart(key)){ entries.push({key, min: null, pre: true}); continue; }
+        const e = normalizeEntry(data[key]);
+        const v = (e.minutes !== "" && e.minutes !== undefined && !isNaN(e.minutes)) ? Number(e.minutes) : null;
+        entries.push({key, min: v});
+        if(v !== null && v > 0){
+            sum += v;
+            trackedDays++;
+            if(v > bestMin){ bestMin = v; bestDay = key; }
+            if(v < worstMin){ worstMin = v; worstDay = key; }
+        }
+    }
+
+    // Longest streak within this month
+    let streak = 0, maxStreak = 0, curStreakStart = null, maxStreakStart = null, maxStreakEnd = null;
+    for(let d = 1; d <= daysInMonth; d++){
+        const key = `${year}-${month}-${d}`;
+        if(isPreStart(key)){ streak = 0; continue; }
+        const v = normalizeEntry(data[key]).minutes;
+        const active = v !== "" && v !== undefined && !isNaN(v) && Number(v) > 0;
+        if(active){
+            if(streak === 0) curStreakStart = key;
+            streak++;
+            if(streak > maxStreak){ maxStreak = streak; maxStreakStart = curStreakStart; maxStreakEnd = key; }
+        } else {
+            streak = 0;
+        }
+    }
+
+    return {
+        year, month, daysInMonth, entries, sum, trackedDays,
+        avg: trackedDays > 0 ? Math.round(sum / trackedDays) : 0,
+        avgPerCalDay: trackedDays > 0 ? Math.round(sum / daysInMonth) : 0,
+        bestDay, bestMin,
+        worstDay: trackedDays > 0 ? worstDay : null,
+        worstMin: trackedDays > 0 ? worstMin : 0,
+        maxStreak, maxStreakStart, maxStreakEnd
+    };
+}
+
+function getPrevMonthStats(year, month){
+    let py = year, pm = month - 1;
+    if(pm < 1){ pm = 12; py--; }
+    return getMonthStats(py, pm);
+}
+
+function generateMonthSummary(stats, prev){
+    const { sum, trackedDays, avg, daysInMonth, maxStreak, bestMin } = stats;
+    if(trackedDays === 0) return "In diesem Monat wurden noch keine Aktivitäten erfasst.";
+
+    const lines = [];
+    const totalH = Math.floor(sum/60), totalM = sum%60;
+    const timeStr = totalH > 0 ? `${totalH} Std. ${totalM} Min.` : `${sum} Min.`;
+
+    // Opening
+    if(avg >= 90) lines.push(`Ein starker Monat – insgesamt ${timeStr} draußen verbracht.`);
+    else if(avg >= 60) lines.push(`Solider Monat mit insgesamt ${timeStr} Draußen-Zeit.`);
+    else if(avg >= 30) lines.push(`Ausbaufähiger Monat – insgesamt ${timeStr} erreicht.`);
+    else lines.push(`Schwacher Monat – nur ${timeStr} draußen verbracht.`);
+
+    // Tracking coverage
+    const coverage = Math.round(trackedDays / daysInMonth * 100);
+    if(coverage >= 90) lines.push(`Ausgezeichnete Konstanz: an ${trackedDays} von ${daysInMonth} Tagen aktiv.`);
+    else if(coverage >= 60) lines.push(`An ${trackedDays} von ${daysInMonth} Tagen wurde Zeit draußen erfasst.`);
+    else lines.push(`Lediglich ${trackedDays} von ${daysInMonth} Tagen erfasst – mehr Konsistenz wäre wünschenswert.`);
+
+    // Streak
+    if(maxStreak >= 10) lines.push(`Beeindruckende Serie von ${maxStreak} Tagen am Stück!`);
+    else if(maxStreak >= 5) lines.push(`Längste Serie: ${maxStreak} Tage in Folge.`);
+    else if(maxStreak > 0) lines.push(`Längste aktive Serie: ${maxStreak} Tag${maxStreak > 1 ? 'e' : ''}.`);
+
+    // Comparison
+    if(prev && prev.sum > 0){
+        const diff = sum - prev.sum;
+        if(diff > 0) lines.push(`Gegenüber dem Vormonat eine Steigerung von ${diff} Min. (+${Math.round(diff/prev.sum*100)} %).`);
+        else if(diff < 0) lines.push(`Gegenüber dem Vormonat ein Rückgang von ${Math.abs(diff)} Min. (${Math.round(diff/prev.sum*100)} %).`);
+    }
+
+    return lines.join(' ');
+}
+
+function renderMonthlyReview(){
+    const monthNames = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+    document.getElementById("mrNavLabel").textContent = `${monthNames[mrMonth-1]} ${mrYear}`;
+
+    const stats = getMonthStats(mrYear, mrMonth);
+    const prev  = getPrevMonthStats(mrYear, mrMonth);
+
+    const totalH = Math.floor(stats.sum / 60);
+    const totalM = stats.sum % 60;
+    const totalStr = totalH > 0 ? `${totalH}h ${totalM}m` : `${stats.sum}m`;
+
+    // Comparison
+    let compareHtml = '';
+    if(prev.sum > 0 || stats.sum > 0){
+        const diff = stats.sum - prev.sum;
+        const pct  = prev.sum > 0 ? Math.round(diff / prev.sum * 100) : null;
+        const cls  = diff > 0 ? 'positive' : diff < 0 ? 'negative' : 'neutral';
+        const arrow = diff > 0 ? '▲' : diff < 0 ? '▼' : '=';
+        const sign  = diff > 0 ? '+' : '';
+        const pctStr = pct !== null ? ` (${sign}${pct} %)` : '';
+        compareHtml = `<div class="mr-compare ${cls}">${arrow} ${sign}${diff} Min. ggü. Vormonat${pctStr}</div>`;
+    }
+
+    function fmtKey(k){
+        if(!k) return '–';
+        const p = k.split('-');
+        const d = new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2]));
+        const wd = ['So','Mo','Di','Mi','Do','Fr','Sa'][d.getDay()];
+        return `${wd}, ${String(p[2]).padStart(2,'0')}.${String(p[1]).padStart(2,'0')}`;
+    }
+
+    // Dot grid
+    const dots = stats.entries.map(e => {
+        if(e.pre) return `<div class="mr-dot" title="Vor Tracking-Start"></div>`;
+        if(e.min === null || e.min === 0) return `<div class="mr-dot" title="0 Min."></div>`;
+        if(e.min < 30)  return `<div class="mr-dot bad"     title="${e.min} Min."></div>`;
+        if(e.min < 60)  return `<div class="mr-dot low"     title="${e.min} Min."></div>`;
+        if(e.min < 90)  return `<div class="mr-dot partial" title="${e.min} Min."></div>`;
+        return `<div class="mr-dot active" title="${e.min} Min."></div>`;
+    }).join('');
+
+    const summary = generateMonthSummary(stats, prev);
+
+    const prevMonthName = (() => {
+        let pm = mrMonth - 1; let py = mrYear;
+        if(pm < 1){ pm = 12; py--; }
+        return `${monthNames[pm-1]} ${py}`;
+    })();
+
+    document.getElementById("mrContent").innerHTML = `
+        <div class="mr-header">
+            <div class="mr-month-title">🌿 ${monthNames[mrMonth-1]} ${mrYear}</div>
+            <div class="mr-month-subtitle">Monatliche Auswertung</div>
+            <div class="mr-total-hero">${totalStr}</div>
+            <div class="mr-total-label">Gesamtzeit draußen</div>
+            ${compareHtml}
+        </div>
+
+        <div class="mr-grid">
+            <div class="mr-card highlight">
+                <span class="mr-card-icon">📅</span>
+                <div class="mr-card-label">Tage erfasst</div>
+                <div class="mr-card-value">${stats.trackedDays} / ${stats.daysInMonth}</div>
+                <div class="mr-card-sub">${stats.daysInMonth - stats.trackedDays} Tage ohne Eintrag</div>
+            </div>
+            <div class="mr-card highlight">
+                <span class="mr-card-icon">⌀</span>
+                <div class="mr-card-label">Ø pro erfasstem Tag</div>
+                <div class="mr-card-value">${stats.avg} Min.</div>
+                <div class="mr-card-sub">Ø ${stats.avgPerCalDay} Min./Kalendertag</div>
+            </div>
+            <div class="mr-card">
+                <span class="mr-card-icon">⭐</span>
+                <div class="mr-card-label">Bester Tag</div>
+                <div class="mr-card-value">${stats.bestMin > 0 ? stats.bestMin + ' Min.' : '–'}</div>
+                <div class="mr-card-sub">${fmtKey(stats.bestDay)}</div>
+            </div>
+            <div class="mr-card">
+                <span class="mr-card-icon">📉</span>
+                <div class="mr-card-label">Schlechtester Tag</div>
+                <div class="mr-card-value">${stats.worstDay ? stats.worstMin + ' Min.' : '–'}</div>
+                <div class="mr-card-sub">${fmtKey(stats.worstDay)}</div>
+            </div>
+            <div class="mr-card">
+                <span class="mr-card-icon">🔥</span>
+                <div class="mr-card-label">Längste Streak</div>
+                <div class="mr-card-value">${stats.maxStreak > 0 ? stats.maxStreak + ' Tage' : '–'}</div>
+                <div class="mr-card-sub">${stats.maxStreakEnd ? 'bis ' + fmtKey(stats.maxStreakEnd) : ''}</div>
+            </div>
+            <div class="mr-card">
+                <span class="mr-card-icon">📊</span>
+                <div class="mr-card-label">Vormonat (${prevMonthName})</div>
+                <div class="mr-card-value">${prev.sum > 0 ? Math.floor(prev.sum/60)+'h '+prev.sum%60+'m' : prev.trackedDays > 0 ? prev.sum+' Min.' : '–'}</div>
+                <div class="mr-card-sub">${prev.trackedDays > 0 ? prev.trackedDays + ' Tage · Ø '+prev.avg+' Min.' : 'Keine Daten'}</div>
+            </div>
+        </div>
+
+        <div class="mr-streak-bar">
+            <div class="mr-streak-label">🗓 Aktivitätsverlauf</div>
+            <div class="mr-streak-dots">${dots}</div>
+            <div style="display:flex;gap:12px;margin-top:8px;font-size:0.72rem;opacity:0.6;flex-wrap:wrap;">
+                <span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--color-darkgreen);vertical-align:middle;margin-right:3px;"></span>≥90 Min.</span>
+                <span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--color-lightgreen);vertical-align:middle;margin-right:3px;"></span>60–89 Min.</span>
+                <span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--color-yellow);vertical-align:middle;margin-right:3px;"></span>30–59 Min.</span>
+                <span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--color-red);vertical-align:middle;margin-right:3px;"></span>&lt;30 Min.</span>
+            </div>
+        </div>
+
+        <div class="mr-summary">
+            <div class="mr-summary-title">💬 Zusammenfassung</div>
+            ${summary}
+        </div>
+    `;
+}
+
+function downloadMonthlyReport(){
+    const monthNames = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+    const stats = getMonthStats(mrYear, mrMonth);
+    const prev  = getPrevMonthStats(mrYear, mrMonth);
+
+    const totalH = Math.floor(stats.sum / 60);
+    const totalM = stats.sum % 60;
+    const totalStr = totalH > 0 ? `${totalH}h ${totalM}m` : `${stats.sum}m`;
+
+    const now = new Date();
+    const dateStr = `${String(now.getDate()).padStart(2,'0')}.${String(now.getMonth()+1).padStart(2,'0')}.${now.getFullYear()}`;
+
+    const diff = stats.sum - prev.sum;
+    const pct  = prev.sum > 0 ? Math.round(diff / prev.sum * 100) : null;
+    const sign = diff >= 0 ? '+' : '';
+    const arrow = diff > 0 ? '▲' : diff < 0 ? '▼' : '=';
+    const compareColor = diff > 0 ? '#2d7d40' : diff < 0 ? '#c02828' : '#607050';
+    const compareBg    = diff > 0 ? '#e8f5ec' : diff < 0 ? '#fdecea' : '#f0f2ee';
+    const compareText  = prev.sum > 0
+        ? `${arrow} ${sign}${diff} Min. ggü. Vormonat${pct !== null ? ` (${sign}${pct} %)` : ''}`
+        : 'Kein Vormonat verfügbar';
+
+    function fmtKey(k){
+        if(!k) return '–';
+        const p = k.split('-');
+        const d = new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2]));
+        const wd = ['So','Mo','Di','Mi','Do','Fr','Sa'][d.getDay()];
+        return `${wd}, ${String(p[2]).padStart(2,'0')}.${String(p[1]).padStart(2,'0')}.${p[0]}`;
+    }
+
+    const prevMonthName = (() => {
+        let pm = mrMonth-1; let py = mrYear;
+        if(pm<1){pm=12;py--;}
+        return `${monthNames[pm-1]} ${py}`;
+    })();
+
+    const summary = generateMonthSummary(stats, prev);
+
+    const dotColors = stats.entries.map(e => {
+        if(e.pre || e.min === null || e.min === 0) return '#dde5d8';
+        if(e.min < 30) return '#f5a8ae';
+        if(e.min < 60) return '#f5e580';
+        if(e.min < 90) return '#93d49b';
+        return '#4caf62';
+    });
+    const dotsHtml = dotColors.map((c,i) => `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${c};margin:2px;" title="Tag ${i+1}"></span>`).join('');
+
+    const cards = [
+        { icon:'📅', label:'Tage erfasst', val:`${stats.trackedDays} / ${stats.daysInMonth} Tage`, sub:`${stats.daysInMonth-stats.trackedDays} Tage ohne Eintrag` },
+        { icon:'⌀', label:'Ø pro erfasstem Tag', val:`${stats.avg} Min.`, sub:`Ø ${stats.avgPerCalDay} Min. / Kalendertag` },
+        { icon:'⭐', label:'Bester Tag', val:stats.bestMin > 0 ? stats.bestMin+' Min.' : '–', sub:fmtKey(stats.bestDay) },
+        { icon:'📉', label:'Schlechtester Tag', val:stats.worstDay ? stats.worstMin+' Min.' : '–', sub:fmtKey(stats.worstDay) },
+        { icon:'🔥', label:'Längste Streak', val:stats.maxStreak > 0 ? stats.maxStreak+' Tage' : '–', sub:stats.maxStreakEnd ? 'bis '+fmtKey(stats.maxStreakEnd) : '' },
+        { icon:'📊', label:`Vormonat (${prevMonthName})`, val:prev.sum > 0 ? Math.floor(prev.sum/60)+'h '+prev.sum%60+'m' : prev.trackedDays > 0 ? prev.sum+' Min.' : '–', sub:prev.trackedDays > 0 ? prev.trackedDays+' Tage · Ø '+prev.avg+' Min.' : 'Keine Daten' }
+    ];
+
+    const cardsHtml = cards.map(c => `
+        <div style="background:#fff;border-radius:12px;padding:1rem 1.1rem;border:1px solid rgba(80,140,50,0.18);box-shadow:0 2px 8px rgba(40,100,20,0.06);position:relative;overflow:hidden;">
+            <div style="position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#4a8c35,transparent);opacity:0.4;"></div>
+            <div style="font-size:1.2rem;margin-bottom:4px;">${c.icon}</div>
+            <div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.09em;color:#6a9055;font-weight:600;margin-bottom:4px;">${c.label}</div>
+            <div style="font-size:1.1rem;font-weight:700;color:#1a2218;line-height:1.2;">${c.val}</div>
+            <div style="font-size:0.73rem;color:#8aaa78;margin-top:2px;">${c.sub}</div>
+        </div>`).join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monatsrückblick ${monthNames[mrMonth-1]} ${mrYear}</title>
+<style>
+* { box-sizing:border-box; margin:0; padding:0; }
+body { font-family:system-ui,-apple-system,sans-serif; background:#f0f4ee; color:#1a2218; padding:2rem 1rem; min-height:100vh; }
+.wrapper { max-width:680px; margin:0 auto; }
+.header { text-align:center; margin-bottom:2rem; }
+.header .leaf { font-size:2.2rem; display:block; margin-bottom:0.4rem; }
+.header h1 { font-size:1.5rem; font-weight:700; color:#2d6e1e; }
+.header .subtitle { font-size:0.82rem; color:#6a8a5a; margin-top:0.3rem; }
+hr { height:2px; background:linear-gradient(90deg,transparent,#a8d878,transparent); border:none; margin:1.5rem 0; }
+.hero { background:linear-gradient(135deg,rgba(74,140,53,0.14) 0%,rgba(40,100,28,0.06) 100%); border:1px solid rgba(80,140,50,0.22); border-radius:16px; padding:1.6rem 1.4rem; text-align:center; margin-bottom:1.5rem; }
+.hero-total { font-size:2.4rem; font-weight:800; color:#1a2218; }
+.hero-label { font-size:0.78rem; color:#6a8a5a; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:12px; }
+.badge { display:inline-block; padding:5px 16px; border-radius:20px; font-size:0.88rem; font-weight:700; background:${compareBg}; color:${compareColor}; border:1px solid ${compareColor}44; }
+.grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:1.4rem; }
+@media(max-width:480px){ .grid{grid-template-columns:1fr;} }
+.dot-box { background:#fff; border-radius:12px; padding:1.1rem; border:1px solid rgba(80,140,50,0.15); margin-bottom:1.4rem; }
+.dot-title { font-size:0.7rem; text-transform:uppercase; letter-spacing:0.09em; color:#6a9055; font-weight:600; margin-bottom:8px; }
+.legend { display:flex; gap:14px; margin-top:8px; font-size:0.72rem; color:#8aaa78; flex-wrap:wrap; }
+.summary-box { background:#fff; border-radius:12px; padding:1.1rem 1.2rem; border:1px solid rgba(80,140,50,0.15); margin-bottom:1.4rem; font-size:0.9rem; line-height:1.55; color:#2a3a28; }
+.summary-title { font-size:0.7rem; text-transform:uppercase; letter-spacing:0.09em; color:#6a9055; font-weight:600; margin-bottom:8px; }
+.footer { text-align:center; margin-top:2rem; font-size:0.78rem; color:#8aaa78; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <div class="header">
+    <span class="leaf">🌿</span>
+    <h1>Monatsrückblick – ${monthNames[mrMonth-1]} ${mrYear}</h1>
+    <div class="subtitle">Erstellt am ${dateStr}</div>
+  </div>
+  <hr>
+  <div class="hero">
+    <div class="hero-total">${totalStr}</div>
+    <div class="hero-label">Gesamtzeit draußen</div>
+    <span class="badge">${compareText}</span>
+  </div>
+  <div class="grid">${cardsHtml}</div>
+  <div class="dot-box">
+    <div class="dot-title">🗓 Aktivitätsverlauf</div>
+    <div>${dotsHtml}</div>
+    <div class="legend">
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#4caf62;vertical-align:middle;margin-right:3px;"></span>≥90 Min.</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#93d49b;vertical-align:middle;margin-right:3px;"></span>60–89 Min.</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#f5e580;vertical-align:middle;margin-right:3px;"></span>30–59 Min.</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#f5a8ae;vertical-align:middle;margin-right:3px;"></span>&lt;30 Min.</span>
+    </div>
+  </div>
+  <div class="summary-box">
+    <div class="summary-title">💬 Zusammenfassung</div>
+    ${summary}
+  </div>
+  <div class="footer">Draußen-Zeit Tracker · Monatsrückblick · Erstellt am ${dateStr}</div>
+</div>
+</body>
+</html>`;
+
+    const blob = new Blob([html], {type:"text/html;charset=utf-8"});
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `monatsrueckblick-${mrYear}-${String(mrMonth).padStart(2,'0')}.html`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+}
+// ===== END MONATSRÜCKBLICK =====
+
+function downloadStatsReport(){
+    // Collect stats data fresh
+    const monthNames2 = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+    const weekdays2 = ['Mo','Di','Mi','Do','Fr','Sa','So'];
+    let totalMinutes2 = 0, totalDaysWithData2 = 0;
+    let bestDay2 = null, bestDayMin2 = 0;
+    const monthlyData2 = {};
+
+    Object.keys(data).sort().forEach(k => {
+        if(isPreStart(k)) return;
+        const e = normalizeEntry(data[k]);
+        const v = e.minutes;
+        if(v === "" || v === undefined || isNaN(v)) return;
+        const parts = k.split('-');
+        const y2 = parseInt(parts[0]), m2 = parseInt(parts[1]);
+        const mk = `${y2}-${m2}`;
+        if(!monthlyData2[mk]) monthlyData2[mk] = {sum:0,count:0,year:y2,month:m2};
+        monthlyData2[mk].sum += v;
+        monthlyData2[mk].count++;
+        totalMinutes2 += v;
+        totalDaysWithData2++;
+        if(v > bestDayMin2){ bestDayMin2=v; bestDay2=k; }
+    });
+
+    const monthAvgs2 = Object.keys(monthlyData2).map(mk => ({
+        ...monthlyData2[mk],
+        avg: Math.round(monthlyData2[mk].sum / monthlyData2[mk].count)
+    }));
+
+    const bestMonth2   = monthAvgs2.length ? monthAvgs2.reduce((a,b) => a.avg > b.avg ? a : b) : null;
+    const worstMonth2  = monthAvgs2.length ? monthAvgs2.reduce((a,b) => a.avg < b.avg ? a : b) : null;
+    const mostTotal2   = monthAvgs2.length ? monthAvgs2.reduce((a,b) => a.sum > b.sum ? a : b) : null;
+
+    const sortedKeys2 = Object.keys(data).filter(k => {
+        if(isPreStart(k)) return false;
+        const v = normalizeEntry(data[k]).minutes;
+        return v !== "" && v !== undefined && !isNaN(v) && v > 0;
+    }).sort();
+    let streak2=0, maxStreak2=0, maxStreakEnd2=null;
+    for(let i=0;i<sortedKeys2.length;i++){
+        if(i===0){ streak2=1; } else {
+            const diff = (new Date(sortedKeys2[i]) - new Date(sortedKeys2[i-1])) / 86400000;
+            if(diff===1) streak2++; else streak2=1;
+        }
+        if(streak2>maxStreak2){ maxStreak2=streak2; maxStreakEnd2=sortedKeys2[i]; }
+    }
+    let curStreak2=0;
+    const today2=new Date();
+    for(let i=0;;i++){
+        const d2=new Date(today2); d2.setDate(d2.getDate()-i);
+        const k2=`${d2.getFullYear()}-${d2.getMonth()+1}-${d2.getDate()}`;
+        if(isPreStart(k2)) break;
+        const v2=normalizeEntry(data[k2]).minutes;
+        if(v2>0) curStreak2++; else break;
+    }
+    const totalHours2=Math.floor(totalMinutes2/60), remMins2=totalMinutes2%60;
+
+    const weekdaySum2=[0,0,0,0,0,0,0], weekdayCount2=[0,0,0,0,0,0,0];
+    Object.keys(data).forEach(k=>{
+        if(isPreStart(k)) return;
+        const v=normalizeEntry(data[k]).minutes;
+        if(v===""||isNaN(v)||v===undefined) return;
+        const parts=k.split('-');
+        const d=new Date(parseInt(parts[0]),parseInt(parts[1])-1,parseInt(parts[2]));
+        const wd=(d.getDay()+6)%7;
+        weekdaySum2[wd]+=v; weekdayCount2[wd]+=1;
+    });
+    let bestWD2=0;
+    for(let i=1;i<7;i++){
+        if((weekdayCount2[i]?weekdaySum2[i]/weekdayCount2[i]:0)>(weekdayCount2[bestWD2]?weekdaySum2[bestWD2]/weekdayCount2[bestWD2]:0)) bestWD2=i;
+    }
+
+    function fmtKey2(k){ if(!k) return "–"; const p=k.split('-'); return `${p[2].padStart(2,'0')}.${p[1].padStart(2,'0')}.${p[0]}`; }
+    function fmtKeyWD2(k){
+        if(!k) return "–";
+        const p=k.split('-');
+        const d=new Date(parseInt(p[0]),parseInt(p[1])-1,parseInt(p[2]));
+        return `${ ['So','Mo','Di','Mi','Do','Fr','Sa'][d.getDay()]}, ${p[2].padStart(2,'0')}.${p[1].padStart(2,'0')}.${p[0]}`;
+    }
+
+    const now = new Date();
+    const dateStr = `${String(now.getDate()).padStart(2,'0')}.${String(now.getMonth()+1).padStart(2,'0')}.${now.getFullYear()}`;
+
+    function rptMinsToShort(mins){
+        const h = Math.floor(mins / 60), m = mins % 60;
+        if(h === 0) return `${m}min`;
+        if(m === 0) return `${h}h`;
+        return `${h}h ${m}min`;
+    }
+    function rptMinsToFull(mins){
+        const MINS_PER_YEAR = 60*24*365;
+        const years = Math.floor(mins / MINS_PER_YEAR); let rem = mins % MINS_PER_YEAR;
+        const days  = Math.floor(rem / (60*24));        rem = rem % (60*24);
+        const hours = Math.floor(rem / 60);
+        const m     = rem % 60;
+        const parts = [];
+        if(years > 0) parts.push(`${years} Jahr${years===1?'':'e'}`);
+        if(days  > 0) parts.push(`${days} Tag${days===1?'':'e'}`);
+        if(hours > 0) parts.push(`${hours} Stunde${hours===1?'':'n'}`);
+        if(m     > 0) parts.push(`${m} Minute${m===1?'':'n'}`);
+        return parts.join(', ') || '0 Minuten';
+    }
+
+    const statsRows = [
+        { icon:"🏆", title:"Bester Monat (Durchschnitt)", value: bestMonth2 ? `${monthNames2[bestMonth2.month-1]} ${bestMonth2.year} – ${bestMonth2.avg} min/Tag` : "–", sub: bestMonth2 ? [`(${rptMinsToShort(bestMonth2.avg)})`] : [] },
+        { icon:"📉", title:"Schwächster Monat (Durchschnitt)", value: worstMonth2 ? `${monthNames2[worstMonth2.month-1]} ${worstMonth2.year} – ${worstMonth2.avg} min/Tag` : "–", sub: worstMonth2 ? [`(${rptMinsToShort(worstMonth2.avg)})`] : [] },
+        { icon:"⭐", title:"Bester einzelner Tag", value: bestDay2 ? `${fmtKeyWD2(bestDay2)} – ${bestDayMin2} min` : "–", sub: bestDay2 ? [`(${rptMinsToShort(bestDayMin2)})`] : [] },
+        { icon:"🔥", title:"Längste Serie (Tage in Folge)", value: maxStreak2>0 ? `${maxStreak2} Tage${maxStreakEnd2 ? ` (bis ${fmtKey2(maxStreakEnd2)})` : ""}` : "–", sub: [] },
+        { icon:"⚡", title:"Aktuelle Serie", value: curStreak2>0 ? `${curStreak2} Tag${curStreak2===1?'':'e'}` : "Keine aktive Serie", sub: [] },
+        { icon:"⏱️", title:"Gesamtzeit (alle Einträge)", value: totalDaysWithData2>0 ? `${totalMinutes2} Minuten` : "–", sub: totalDaysWithData2>0 ? [`(${totalHours2}h ${remMins2}min)`, `(${rptMinsToFull(totalMinutes2)})`, `Getrackt an ${totalDaysWithData2} Tagen`] : [] },
+        { icon:"📅", title:"Monat mit meisten Gesamtminuten", value: mostTotal2 ? `${monthNames2[mostTotal2.month-1]} ${mostTotal2.year} – ${mostTotal2.sum} min` : "–", sub: mostTotal2 ? [`(${rptMinsToShort(mostTotal2.sum)})`] : [] },
+        { icon:"📆", title:"Bester Wochentag im Durchschnitt", value: weekdayCount2[bestWD2]>0 ? `${weekdays2[bestWD2]} – Ø ${Math.round(weekdaySum2[bestWD2]/weekdayCount2[bestWD2])} min` : "–", sub: weekdayCount2[bestWD2]>0 ? [`(${rptMinsToShort(Math.round(weekdaySum2[bestWD2]/weekdayCount2[bestWD2]))})`] : [] }
+    ];
+
+    const cardsHtml = statsRows.map(s => `
+        <div class="card">
+            <div class="card-title">${s.icon} ${s.title}</div>
+            <div class="card-value">${s.value}</div>
+            ${s.sub.map(line => `<div class="card-sub">${line}</div>`).join('')}
+        </div>`).join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Draußen-Zeit – Statistikbericht ${dateStr}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #f0f4ee;
+    color: #1a2218;
+    padding: 2rem 1rem;
+    min-height: 100vh;
+  }
+  .wrapper {
+    max-width: 680px;
+    margin: 0 auto;
+  }
+  .header {
+    text-align: center;
+    margin-bottom: 2rem;
+  }
+  .header .leaf { font-size: 2.2rem; display: block; margin-bottom: 0.4rem; }
+  .header h1 {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #2d6e1e;
+    letter-spacing: 0.01em;
+  }
+  .header .subtitle {
+    font-size: 0.85rem;
+    color: #6a8a5a;
+    margin-top: 0.3rem;
+  }
+  .divider {
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #a8d878, transparent);
+    margin: 1.5rem 0;
+    border: none;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  @media (max-width: 480px) { .grid { grid-template-columns: 1fr; } }
+  .card {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 1.1rem 1.2rem;
+    border: 1px solid rgba(80,140,50,0.18);
+    box-shadow: 0 2px 10px rgba(60,120,30,0.07);
+  }
+  .card-title {
+    font-size: 0.8rem;
+    color: #5a8a3a;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 0.5rem;
+  }
+  .card-value {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #1a2a18;
+    line-height: 1.35;
+  }
+  .card-sub {
+    font-size: 0.85rem;
+    color: #5a7a48;
+    margin-top: 3px;
+    line-height: 1.5;
+  }
+  .footer {
+    text-align: center;
+    margin-top: 2.5rem;
+    font-size: 0.78rem;
+    color: #8aaa78;
+  }
+
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <div class="header">
+    <span class="leaf">🌿</span>
+    <h1>Draußen-Zeit – Statistiken</h1>
+    <div class="subtitle">Erstellt am ${dateStr}</div>
+  </div>
+  <hr class="divider">
+  <div class="grid">
+    ${cardsHtml}
+  </div>
+  <div class="footer">Draußen-Zeit Tracker · Bericht vom ${dateStr}</div>
+</div>
+</body>
+</html>`;
+
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `draussen-statistiken-${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}.html`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+}
+
+document.addEventListener("click",e=>{
+    if(entryBox.classList.contains("show") && !entryBox.contains(e.target) && !e.target.classList.contains("day")) closeEntry();
+    if(sidebar.classList.contains("open") && !sidebar.contains(e.target) && e.target.id!=="menuBtn") closeMenu();
+});
+document.addEventListener("keydown",e=>{
+    if(e.key==="Escape" && entryBox.classList.contains("show")) closeEntry();
+    if(e.key==="Escape" && document.getElementById("monthPicker").classList.contains("show")) closeMonthPicker();
+    if(e.key==="Enter" && entryBox.classList.contains("show")) saveEntry();
+});
+
+addSwipeListener(calendar);
+
+// Init neon after all functions are defined
+if(localStorage.getItem("neonMode")==="true") { document.body.classList.add("neon"); startNeonBg(); }
+
+// ===== TRACKING START DATE =====
+function updateStartDateBadge(){
+    const badge = document.getElementById("startDateBadge");
+    if(!badge) return;
+    if(trackingStart){
+        const d = trackingStart;
+        badge.textContent = `(${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.${d.getFullYear()})`;
+    } else {
+        badge.textContent = "";
+    }
+}
+
+function openStartDateDialog(){
+    closeMenu();
+    const box = document.getElementById("startDateBox");
+    const input = document.getElementById("startDateInput");
+    const cur = document.getElementById("startDateCurrent");
+    if(trackingStart){
+        const y = trackingStart.getFullYear();
+        const m = String(trackingStart.getMonth()+1).padStart(2,'0');
+        const d = String(trackingStart.getDate()).padStart(2,'0');
+        input.value = `${y}-${m}-${d}`;
+        cur.textContent = `Aktuell: ${d}.${m}.${y}`;
+    } else {
+        input.value = "";
+        cur.textContent = "Kein Startdatum gesetzt – alle Tage werden gezählt.";
+    }
+    overlay.classList.add("show");
+    box.style.display = "block";
+    requestAnimationFrame(() => box.classList.add("show"));
+}
+
+function closeStartDateDialog(){
+    const box = document.getElementById("startDateBox");
+    box.classList.remove("show");
+    overlay.classList.remove("show");
+    setTimeout(() => { box.style.display = "none"; }, 250);
+}
+
+function saveStartDate(){
+    const val = document.getElementById("startDateInput").value;
+    if(!val){ closeStartDateDialog(); return; }
+    const parts = val.split('-');
+    const d = new Date(parseInt(parts[0]), parseInt(parts[1])-1, parseInt(parts[2]));
+    if(isNaN(d)){ alert("Ungültiges Datum"); return; }
+    trackingStart = d;
+    localStorage.setItem("trackingStart", val);
+    closeStartDateDialog();
+    updateStartDateBadge();
+    renderCalendar();
+}
+
+function clearStartDate(){
+    if(!confirm("Startdatum wirklich entfernen? Alle Tage werden dann wieder gezählt.")) return;
+    trackingStart = null;
+    localStorage.removeItem("trackingStart");
+    closeStartDateDialog();
+    updateStartDateBadge();
+    renderCalendar();
+}
+
+// close startDateBox on overlay click
+overlay.addEventListener("click", () => {
+    if(document.getElementById("startDateBox").classList.contains("show")){
+        closeStartDateDialog();
+    }
+    if(document.getElementById("monthPicker").classList.contains("show")){
+        closeMonthPicker();
+    }
+});
+
+updateStartDateBadge();
+renderCalendar();
+</script>
+</body>
+</html>
